@@ -17,10 +17,41 @@ sessions:
     newyork: "13:30-16:00"
 
 strategy:
-  risk_reward: 2.0            # TP = risque × ce ratio
+  risk_reward: 1.5            # TP = risque × ce ratio (tester 1.0 / 1.5 / 2.0 :
+                              # plus bas = win rate plus haut, gains plus petits)
   sl_buffer_pips: 3.0         # buffer de sécurité derrière le niveau de sweep
   min_risk_pips: 8.0          # risque minimum entrée->SL : en dessous, le setup
                               # est rejeté (le spread mangerait tout le risque)
+  require_rejection_candle: true   # la bougie de retour en zone doit rejeter
+                                   # (corps dans le sens du trade, clôture dans
+                                   # la bonne moitié de sa range)
+  min_sweep_depth_pips: 3.0        # profondeur minimale du sweep au-delà du
+                                   # niveau balayé (0 = désactivé)
+  require_d1_alignment: true       # le biais Daily doit confirmer le biais H4
+  entry_at_zone_edge: true         # entrée en ORDRE LIMITE dans la zone au lieu
+                                   # du prix courant (meilleur prix moyen,
+                                   # certains setups ne seront jamais remplis)
+  entry_zone_depth: 0.5            # 0 = bord proximal de la zone, 0.5 = milieu,
+                                   # 1 = bord distal (plus profond = meilleur
+                                   # prix, moins de remplissages)
+
+exits:
+  breakeven_after_r: 1.0      # SL remonté à l'entrée quand le trade atteint
+                              # +1R (0 = désactivé)
+  max_holding_bars: 96        # sortie forcée au prix courant après N bougies
+                              # LTF (96 x M15 ≈ 1 jour ; 192 ≈ 2 jours ;
+                              # 0 = désactivé)
+
+calendar:
+  skip_friday_after: "12:00"  # aucun nouveau setup le vendredi après cette
+                              # heure SERVEUR ("" = désactivé)
+  skip_dates:                 # jours morts/fériés évités (format MM-JJ)
+    - "12-24"
+    - "12-25"
+    - "12-26"
+    - "12-31"
+    - "01-01"
+    - "01-02"
   fvg_min_pips: 2.0           # taille minimale d'un FVG
   equal_level_tolerance_pips: 2.0   # tolérance equal highs/lows (arbitraire — risque d'overfitting)
   volume_mult: 1.2            # tick_volume bougie impulsive >= 1.2x sa MM20
@@ -35,6 +66,7 @@ scanner:
   interval_seconds: 300       # scan toutes les 5 minutes
   history_bars_ltf: 300       # bougies M15 chargées à chaque scan
   history_bars_htf: 120       # bougies H4 chargées à chaque scan
+  history_bars_d1: 60         # bougies Daily (pour require_d1_alignment)
   max_telegram_alerts_per_day: 1   # règle FTMO : 1 trade/jour — les setups
                                    # suivants sont stockés en base mais non alertés
 

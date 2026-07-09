@@ -47,11 +47,29 @@ Filtres de confluence :
 - **News** : blackout 30 min avant/après toute news *High impact* touchant une
   des deux devises de la paire (lu depuis `news_today.txt`).
 
-SL derrière l'extrême du sweep + buffer en pips ; TP = risque × R:R (2.0 par
-défaut). Un setup dont le risque entrée→SL est inférieur à
-`strategy.min_risk_pips` (8 pips par défaut) est rejeté : trop petit pour
-survivre au spread. Règle FTMO : **1 alerte Telegram par jour maximum** — les
-setups suivants sont stockés en base sans alerte.
+SL derrière l'extrême du sweep + buffer en pips ; TP = risque × R:R
+(configurable, 1.5 par défaut). Un setup dont le risque entrée→SL est
+inférieur à `strategy.min_risk_pips` (8 pips par défaut) est rejeté : trop
+petit pour survivre au spread. Règle FTMO : **1 alerte Telegram par jour
+maximum** — les setups suivants sont stockés en base sans alerte.
+
+Options supplémentaires, toutes activables/désactivables dans `config.yaml`
+(pour comparer proprement au backtest — changer UNE option à la fois) :
+
+- `require_rejection_candle` : la bougie de retour en zone doit être une
+  bougie de rejet (corps dans le sens du trade, clôture dans la bonne moitié) ;
+- `min_sweep_depth_pips` : profondeur minimale du sweep au-delà du niveau ;
+- `require_d1_alignment` : le biais Daily doit confirmer le biais H4 ;
+- `entry_at_zone_edge` / `entry_zone_depth` : entrée en **ordre limite** dans
+  la zone (meilleur prix, mais certains setups ne sont jamais remplis) ;
+- `exits.breakeven_after_r` : SL remonté à l'entrée après +N R ;
+- `exits.max_holding_bars` : sortie forcée au prix courant après N bougies ;
+- `calendar.skip_friday_after` / `calendar.skip_dates` : pas de nouveau setup
+  le vendredi après-midi ni les jours morts (Noël, jour de l'an...).
+
+Le rapport de backtest ventile les stats par paire, killzone, type de zone,
+sens, jour de la semaine, durée de trade et type de sortie (tp / sl /
+breakeven / time) pour décider des filtres sur des faits.
 
 Le scanner live et le backtest utilisent **exactement la même fonction de
 détection** (`smc.core.find_amd_setup`) : ce qui est backtesté est ce qui

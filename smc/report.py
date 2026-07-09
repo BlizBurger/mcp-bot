@@ -49,6 +49,49 @@ def _equity_svg(equity: list[float], width: int = 900, height: int = 260) -> str
     )
 
 
+def _grp_stats(df: pd.DataFrame) -> dict:
+    """Mini-stats pour les tableaux de ventilation."""
+    if df.empty:
+        return {"n": 0}
+    wins = df[df["result_r"] > 0]
+    gross_win = wins["result_r"].sum()
+    gross_loss = abs(df[df["result_r"] <= 0]["result_r"].sum())
+    return {"n": len(df), "wr": len(wins) / len(df),
+            "avg": df["result_r"].mean(), "tot": df["result_r"].sum(),
+            "pf": (gross_win / gross_loss) if gross_loss > 0 else float("inf")}
+
+
+def _breakdown_table(trades: pd.DataFrame, key, title: str) -> str:
+    """Tableau de stats ventilé par `key` (nom de colonne ou fonction ligne->label)."""
+    if trades.empty:
+        return ""
+    labels = trades[key] if isinstance(key, str) else trades.apply(key, axis=1)
+    rows = []
+    for label in labels.unique():
+        s = _grp_stats(trades[labels == label])
+        pf_txt = "∞" if s["pf"] == float("inf") else f"{s['pf']:.2f}"
+        rows.append(f"<tr><td>{label}</td><td>{s['n']}</td>"
+                    f"<td>{s['wr']*100:.0f}%</td><td>{s['avg']:+.2f}</td>"
+                    f"<td>{s['tot']:+.1f}</td><td>{pf_txt}</td></tr>")
+    return (f"<h2>{title}</h2><table><tr><th></th><th>Trades</th><th>Win rate</th>"
+            f"<th>R moyen</th><th>Total R</th><th>Profit factor</th></tr>"
+            + "".join(rows) + "</table>")
+
+
+_WEEKDAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+
+def _duration_bucket(row) -> str:
+    hours = (row["close_time"] - row["open_time"]).total_seconds() / 3600
+    if hours < 1:
+        return "< 1h"
+    if hours < 4:
+        return "1-4h"
+    if hours < 24:
+        return "4-24h"
+    return "> 24h"
+
+
 def _fmt_stats(stats: dict) -> str:
     if not stats.get("trades"):
         return "<p><b>Aucun trade généré sur la période.</b></p>"
@@ -68,17 +111,31 @@ def render_report(trades: pd.DataFrame, stats: dict, per_pair: dict,
                   days: int) -> str:
     warn_items = "".join(f"<li>{w}</li>" for w in WARNINGS)
 
+    breakdowns = ""
     if trades.empty:
         equity_html = "<p>Aucun trade.</p>"
         trades_rows = ""
         pair_rows = ""
     else:
+        if "session" in trades.columns:
+            breakdowns += _breakdown_table(trades, "session", "Stats par killzone")
+        breakdowns += _breakdown_table(trades, "zone_kind", "Stats par type de zone")
+        breakdowns += _breakdown_table(trades, "direction", "Stats par sens")
+        breakdowns += _breakdown_table(
+            trades, lambda r: _WEEKDAYS[r["open_time"].weekday()],
+            "Stats par jour de la semaine")
+        breakdowns += _breakdown_table(trades, _duration_bucket,
+                                       "Stats par durée de trade")
+        if "exit_kind" in trades.columns:
+            breakdowns += _breakdown_table(trades, "exit_kind",
+                                           "Stats par type de sortie")
         equity_html = _equity_svg(trades["result_r"].cumsum().tolist())
         trades_rows = "".join(
             f"<tr><td>{t.pair}</td><td>{t.direction}</td><td>{t.zone_kind}"
             f"{' + sweep' if t.swept else ''}</td>"
             f"<td>{t.open_time:%Y-%m-%d %H:%M}</td><td>{t.close_time:%m-%d %H:%M}</td>"
             f"<td>{t.entry:.5f}</td><td>{t.sl:.5f}</td><td>{t.tp:.5f}</td>"
+            f"<td>{getattr(t, 'exit_kind', '')}</td>"
             f"<td class=\"{'win' if t.result_r > 0 else 'loss'}\">{t.result_r:+.1f} R</td></tr>"
             for t in trades.itertuples())
         pair_cells = []
@@ -116,8 +173,11 @@ grossière, le spread réel varie. Le slippage n'est pas modélisé.</p>
 <table><tr><th>Paire</th><th>Trades</th><th>Win rate</th><th>R moyen</th>
 <th>Total R</th><th>Profit factor</th></tr>{pair_rows}</table>
 
+{breakdowns}
+
 <h2>Trades ({stats.get('trades', 0)})</h2>
 <table><tr><th>Paire</th><th>Sens</th><th>Zone</th><th>Ouverture</th>
-<th>Clôture</th><th>Entrée</th><th>SL</th><th>TP</th><th>Résultat</th></tr>
+<th>Clôture</th><th>Entrée</th><th>SL</th><th>TP</th><th>Sortie</th>
+<th>Résultat</th></tr>
 {trades_rows}</table>
 </body></html>"""

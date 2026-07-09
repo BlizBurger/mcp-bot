@@ -405,3 +405,119 @@ class TestFindAMDSetup:
         setup = find_amd_setup("EURUSD", self.bullish_htf(), self.ltf_amd_day(),
                                cfg, pip_size=0.0001)
         assert setup is not None
+
+
+# ---------------------------------------------------------------------------
+# Nouveaux filtres : rejet, profondeur de sweep, D1, ordre limite, calendrier
+# ---------------------------------------------------------------------------
+
+from smc.core import calendar_blocked, is_rejection_candle  # noqa: E402
+
+
+class TestRejectionCandle:
+    def test_long_rejection(self):
+        # corps haussier, clôture dans la moitié haute
+        c = pd.Series({"open": 1.0046, "high": 1.0062, "low": 1.0042, "close": 1.0058})
+        assert is_rejection_candle(c, "long") is True
+
+    def test_long_traversal_fails(self):
+        # bougie baissière qui traverse : pas un rejet pour un long
+        c = pd.Series({"open": 1.0095, "high": 1.0096, "low": 1.0045, "close": 1.0050})
+        assert is_rejection_candle(c, "long") is False
+
+    def test_short_rejection(self):
+        c = pd.Series({"open": 1.0058, "high": 1.0062, "low": 1.0042, "close": 1.0046})
+        assert is_rejection_candle(c, "short") is True
+
+
+class TestCalendar:
+    def test_skip_date(self):
+        cfg = {"skip_dates": ["12-24"], "skip_friday_after": ""}
+        assert calendar_blocked(datetime(2025, 12, 24, 10, 0), cfg) is not None
+        assert calendar_blocked(datetime(2025, 12, 23, 10, 0), cfg) is None
+
+    def test_friday_afternoon(self):
+        cfg = {"skip_dates": [], "skip_friday_after": "12:00"}
+        friday = datetime(2026, 7, 10, 14, 0)   # un vendredi
+        assert calendar_blocked(friday, cfg) is not None
+        assert calendar_blocked(friday.replace(hour=9), cfg) is None
+        monday = datetime(2026, 7, 6, 14, 0)
+        assert calendar_blocked(monday, cfg) is None
+
+    def test_disabled(self):
+        assert calendar_blocked(datetime(2025, 12, 24, 10, 0), None) is None
+        assert calendar_blocked(datetime(2025, 12, 24, 10, 0),
+                                {"skip_dates": [], "skip_friday_after": ""}) is None
+
+
+class TestNewSetupFilters:
+    """Réutilise les fixtures de TestFindAMDSetup avec les nouveaux filtres."""
+
+    @staticmethod
+    def base():
+        return TestFindAMDSetup()
+
+    @staticmethod
+    def cfg_with(**strategy_overrides):
+        t = TestFindAMDSetup()
+        return {**t.CFG, "strategy": {**t.CFG["strategy"], **strategy_overrides}}
+
+    def test_sweep_depth_filter(self):
+        t = self.base()
+        # profondeur du sweep de la fixture : 10 pips (1.0000 -> 0.9990)
+        assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                              self.cfg_with(min_sweep_depth_pips=15.0),
+                              pip_size=0.0001) is None
+        assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                              self.cfg_with(min_sweep_depth_pips=5.0),
+                              pip_size=0.0001) is not None
+
+    def test_rejection_candle_filter(self):
+        t = self.base()
+        cfg = self.cfg_with(require_rejection_candle=True)
+        # la dernière bougie de la fixture est baissière (traversée) : rejeté
+        assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                              cfg, pip_size=0.0001) is None
+        # même journée mais avec une vraie bougie de rejet en dernier
+        ltf = t.ltf_amd_day()
+        ltf.loc[len(ltf) - 1, ["open", "high", "low", "close"]] = \
+            [1.0046, 1.0062, 1.0042, 1.0058]
+        assert find_amd_setup("EURUSD", t.bullish_htf(), ltf,
+                              cfg, pip_size=0.0001) is not None
+
+    def test_d1_alignment(self):
+        t = self.base()
+        cfg = self.cfg_with(require_d1_alignment=True)
+        bear_d1 = make_df([(v, v, v, v) for v in
+                           [2.5 - x for x in [1.00, 1.02, 1.05, 1.03, 1.01,
+                                              1.04, 1.08, 1.05, 1.03, 1.06,
+                                              1.10, 1.07, 1.05]]])
+        assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                              cfg, pip_size=0.0001, d1_df=bear_d1) is None
+        assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                              cfg, pip_size=0.0001,
+                              d1_df=t.bullish_htf()) is not None
+        # sans D1 fourni : le filtre ne bloque pas
+        assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                              cfg, pip_size=0.0001, d1_df=None) is not None
+
+    def test_entry_at_zone_edge(self):
+        t = self.base()
+        cfg = self.cfg_with(entry_at_zone_edge=True, entry_zone_depth=0.5)
+        setup = find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                               cfg, pip_size=0.0001)
+        assert setup is not None
+        assert setup.entry_is_limit is True
+        # milieu de la zone FVG [1.0040 ; 1.0060]
+        assert setup.entry == pytest.approx(1.0050)
+        # TP recalculé depuis l'entrée limite avec le même R:R
+        risk = setup.entry - setup.sl
+        assert setup.tp == pytest.approx(setup.entry + cfg["strategy"]["risk_reward"] * risk)
+
+    def test_calendar_blocks_setup(self):
+        t = self.base()
+        cfg = {**t.CFG, "calendar": {"skip_dates": ["07-06"],
+                                     "skip_friday_after": ""}}
+        # la fixture se déroule le 2026-07-06
+        assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
+                              cfg, pip_size=0.0001) is None

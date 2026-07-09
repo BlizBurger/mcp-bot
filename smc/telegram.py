@@ -43,20 +43,34 @@ def send_message(token: str, chat_id: str, text: str) -> bool:
     return False
 
 
-def format_setup(setup: Setup) -> str:
+def format_setup(setup: Setup, exits_cfg: dict | None = None) -> str:
     """Message d'alerte lisible sur mobile."""
     arrow = "🟢 LONG" if setup.direction == "long" else "🔴 SHORT"
     sweep_line = (
         f"Sweep {setup.sweep.side} @ {setup.sweep.level:.5f} ({setup.sweep.level_kind})"
         if setup.sweep else "Pas de sweep (zone seule)"
     )
+    entry_line = (
+        f"Ordre LIMITE suggéré @ {setup.entry:.5f} (dans la zone)"
+        if setup.entry_is_limit else f"Entrée ≈ {setup.entry:.5f}"
+    )
+    plan_lines = []
+    if exits_cfg:
+        be = float(exits_cfg.get("breakeven_after_r", 0) or 0)
+        if be > 0:
+            plan_lines.append(f"→ SL à breakeven une fois +{be:.1f}R atteint")
+        mh = int(exits_cfg.get("max_holding_bars", 0) or 0)
+        if mh > 0:
+            plan_lines.append(f"→ couper au marché si ni TP ni SL après ~{mh} bougies M15")
+    plan = ("\nPlan de gestion :\n" + "\n".join(plan_lines) + "\n") if plan_lines else ""
     return (
         f"<b>{arrow} {setup.pair}</b> — setup AMD détecté\n"
         f"Zone : {setup.zone.kind} [{setup.zone.bottom:.5f} ; {setup.zone.top:.5f}]\n"
         f"{sweep_line}\n"
-        f"Entrée ≈ {setup.entry:.5f}\n"
+        f"{entry_line}\n"
         f"SL : {setup.sl:.5f}\n"
         f"TP : {setup.tp:.5f} (R:R {setup.rr:.1f})\n"
+        f"{plan}"
         f"{setup.time:%Y-%m-%d %H:%M} (heure serveur)\n\n"
         f"⚠️ Alerte informative — décision et exécution manuelles uniquement.\n"
         f"⚠️ SMC = méthode sans edge statistiquement prouvé."

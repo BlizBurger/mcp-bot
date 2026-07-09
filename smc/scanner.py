@@ -52,6 +52,7 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
 
     # Pré-charger H4/LTF de toutes les paires (aussi utilisé par le filtre corrélation)
     data: dict[str, dict] = {}
+    need_d1 = bool(s.get("require_d1_alignment"))
     for pair in pairs:
         try:
             data[pair] = {
@@ -59,6 +60,9 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
                                         cfg["scanner"]["history_bars_htf"]),
                 "ltf": client.get_rates(pair, cfg["timeframes"]["ltf"],
                                         cfg["scanner"]["history_bars_ltf"]),
+                "d1": client.get_rates(pair, "D1",
+                                       cfg["scanner"].get("history_bars_d1", 60))
+                if need_d1 else None,
             }
         except MT5Error as exc:
             log.error("Données indisponibles pour %s : %s", pair, exc)
@@ -75,7 +79,8 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
                 continue
 
             pip = client.pip_size(pair)
-            setup = find_amd_setup(pair, d["htf"], d["ltf"], cfg, pip)
+            setup = find_amd_setup(pair, d["htf"], d["ltf"], cfg, pip,
+                                   d1_df=d.get("d1"))
             if setup is None:
                 continue
 
@@ -109,7 +114,7 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
             sent = False
             if can_alert:
                 sent = send_message(env["telegram_token"], env["telegram_chat_id"],
-                                    format_setup(setup))
+                                    format_setup(setup, cfg.get("exits")))
             insert_setup(conn, setup, alerted=sent)
             log.info("SETUP %s %s : entrée %.5f SL %.5f TP %.5f — %s",
                      pair, setup.direction, setup.entry, setup.sl, setup.tp,

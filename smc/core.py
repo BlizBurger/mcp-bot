@@ -58,6 +58,7 @@ class Setup:
     tp: float
     rr: float
     time: datetime
+    entry_is_limit: bool = False   # True : `entry` est un ordre limite suggéré
     comments: list[str] = field(default_factory=list)
 
 
@@ -313,6 +314,38 @@ def news_blackout(events: list[NewsEvent], pair: str, now: datetime,
 
 
 # ---------------------------------------------------------------------------
+# Bougie de rejet / calendrier
+# ---------------------------------------------------------------------------
+
+def is_rejection_candle(candle: pd.Series, direction: str) -> bool:
+    """Bougie de rejet : corps dans le sens du trade ET clôture dans la bonne
+    moitié de sa range (le prix a visité la zone puis a été repoussé)."""
+    rng = float(candle["high"] - candle["low"])
+    if rng <= 0:
+        return False
+    if direction == "long":
+        return bool(candle["close"] > candle["open"] and
+                    (candle["close"] - candle["low"]) / rng >= 0.5)
+    return bool(candle["close"] < candle["open"] and
+                (candle["high"] - candle["close"]) / rng >= 0.5)
+
+
+def calendar_blocked(now: datetime, cal_cfg: Optional[dict]) -> Optional[str]:
+    """Raison du blocage calendrier (jours morts, vendredi après-midi), ou
+    None si rien ne bloque."""
+    if not cal_cfg:
+        return None
+    if now.strftime("%m-%d") in (cal_cfg.get("skip_dates") or []):
+        return f"date évitée ({now.strftime('%m-%d')})"
+    fri = cal_cfg.get("skip_friday_after") or ""
+    if fri and now.weekday() == 4:
+        h, m = map(int, fri.split(":"))
+        if now.time() >= dtime(h, m):
+            return f"vendredi après {fri} (heure serveur)"
+    return None
+
+
+# ---------------------------------------------------------------------------
 # SL / TP
 # ---------------------------------------------------------------------------
 
@@ -340,7 +373,8 @@ def compute_sl_tp(direction: str, entry: float, protected_level: float,
 
 def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
                    cfg: dict, pip_size: float,
-                   now: Optional[datetime] = None) -> Optional[Setup]:
+                   now: Optional[datetime] = None,
+                   d1_df: Optional[pd.DataFrame] = None) -> Optional[Setup]:
     """Cherche un setup AMD complet sur la dernière bougie LTF close.
 
     Étapes (mêmes pour le scanner live et le backtest) :
@@ -360,10 +394,19 @@ def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
         return None
     now = now or ltf_df["time"].iloc[-1]
 
+    # Filtre calendrier : jours morts / vendredi après-midi
+    if calendar_blocked(now, cfg.get("calendar")):
+        return None
+
     bias = htf_bias(htf_df, k=s.get("swing_k", 2))
     if bias == "neutral":
         return None
     direction = "long" if bias == "bullish" else "short"
+
+    # Double alignement : le biais Daily doit confirmer le biais H4
+    if s.get("require_d1_alignment") and d1_df is not None:
+        if htf_bias(d1_df, k=s.get("swing_k", 2)) != bias:
+            return None
 
     # Accumulation : range asiatique du jour
     ar = asian_range(ltf_df, now, cfg["sessions"]["asian"])
@@ -396,6 +439,12 @@ def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
     if sweep is None:
         return None
 
+    # Profondeur minimale du sweep : une mèche de 2 pips n'a rien "nettoyé"
+    depth = (sweep.level - sweep.extreme) if sweep.side == "low" \
+        else (sweep.extreme - sweep.level)
+    if depth < s.get("min_sweep_depth_pips", 0.0) * pip_size:
+        return None
+
     # Distribution : FVG ou OB aligné avec le biais, formé après le sweep
     after = ltf_df.loc[sweep.index:]
     zones = [z for z in find_fvgs(after, min_size=s["fvg_min_pips"] * pip_size)
@@ -420,8 +469,23 @@ def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
         return None
     zone = candidates[-1]
 
+    # Bougie de rejet : le retour en zone doit montrer un rejet, pas une traversée
+    if s.get("require_rejection_candle") and \
+            not is_rejection_candle(ltf_df.iloc[-1], direction):
+        return None
+
     protected = sweep.extreme if sweep else (zone.bottom if direction == "long" else zone.top)
-    entry = price
+
+    # Entrée : prix courant, ou ordre limite dans la zone (meilleur prix moyen,
+    # au risque de ne jamais être rempli)
+    entry_is_limit = bool(s.get("entry_at_zone_edge"))
+    if entry_is_limit:
+        frac = float(s.get("entry_zone_depth", 0.5))
+        span = zone.top - zone.bottom
+        entry = zone.top - frac * span if direction == "long" \
+            else zone.bottom + frac * span
+    else:
+        entry = price
     try:
         sl, tp = compute_sl_tp(direction, entry, protected,
                                s["sl_buffer_pips"], pip_size, s["risk_reward"])
@@ -434,6 +498,7 @@ def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
         return None
     return Setup(pair=pair, direction=direction, zone=zone, sweep=sweep,
                  entry=entry, sl=sl, tp=tp, rr=s["risk_reward"], time=now,
+                 entry_is_limit=entry_is_limit,
                  comments=[f"biais H4 {bias}",
                            f"sweep {sweep.side} @{sweep.level:.5f} ({sweep.level_kind})",
                            f"zone {zone.kind} [{zone.bottom:.5f} ; {zone.top:.5f}]"])
