@@ -1,0 +1,162 @@
+"""Scanner live : scanne les paires toutes les 5 minutes, alerte sur Telegram.
+
+AUCUNE exécution d'ordre — alertes uniquement, la décision reste manuelle.
+
+Lancement : python -m smc.scanner
+
+Robustesse :
+  - chaque cycle et chaque paire sont isolés dans un try/except : une erreur
+    est loggée puis le scan continue, le processus ne meurt jamais en silence ;
+  - la connexion MT5 est vérifiée/rétablie à chaque accès aux données ;
+  - les envois Telegram sont réessayés avec backoff ;
+  - un fichier de statut JSON est écrit à chaque cycle pour le dashboard.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from datetime import datetime
+from pathlib import Path
+
+from smc import WARNINGS
+from smc.config import load_config, load_env
+from smc.core import correlation, find_amd_setup, htf_bias, news_blackout
+from smc.db import alerts_sent_today, connect, insert_setup, setup_already_stored
+from smc.logging_setup import log_warnings_banner, setup_logging
+from smc.mt5_client import MT5Client, MT5Error
+from smc.news import load_news
+from smc.telegram import format_setup, send_message
+
+log = logging.getLogger("smc.scanner")
+
+
+def write_status(path: str, **fields) -> None:
+    """Statut consommé par le dashboard. Ne doit jamais faire tomber le scan."""
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps(
+            {"updated_at": datetime.now().isoformat(), **fields},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as exc:
+        log.warning("Impossible d'écrire le fichier de statut : %s", exc)
+
+
+def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
+    """Un cycle complet de scan. Retourne les paires alertées."""
+    pairs = cfg["pairs"]
+    s = cfg["strategy"]
+    news = load_news(cfg["news"]["file"])
+    alerted: list[str] = []
+
+    # Pré-charger H4/LTF de toutes les paires (aussi utilisé par le filtre corrélation)
+    data: dict[str, dict] = {}
+    for pair in pairs:
+        try:
+            data[pair] = {
+                "htf": client.get_rates(pair, cfg["timeframes"]["htf"],
+                                        cfg["scanner"]["history_bars_htf"]),
+                "ltf": client.get_rates(pair, cfg["timeframes"]["ltf"],
+                                        cfg["scanner"]["history_bars_ltf"]),
+            }
+        except MT5Error as exc:
+            log.error("Données indisponibles pour %s : %s", pair, exc)
+
+    for pair, d in data.items():
+        try:
+            now = datetime.now()
+
+            # Filtre news : blackout 30 min avant/après une High impact
+            ev = news_blackout(news, pair, now, cfg["news"]["blackout_minutes"])
+            if ev:
+                log.info("%s ignoré : blackout news %s %s @ %s",
+                         pair, ev.currency, ev.name, ev.time)
+                continue
+
+            pip = client.pip_size(pair)
+            setup = find_amd_setup(pair, d["htf"], d["ltf"], cfg, pip)
+            if setup is None:
+                continue
+
+            # Filtre corrélation : paire fortement corrélée avec biais H4 opposé
+            my_bias = "bullish" if setup.direction == "long" else "bearish"
+            opposite = "bearish" if my_bias == "bullish" else "bullish"
+            vetoed = False
+            for other, od in data.items():
+                if other == pair:
+                    continue
+                corr = correlation(d["ltf"]["close"], od["ltf"]["close"],
+                                   s["correlation_window"])
+                if abs(corr) > s["correlation_threshold"]:
+                    other_bias = htf_bias(od["htf"], k=s.get("swing_k", 2))
+                    expected = my_bias if corr > 0 else opposite
+                    if other_bias != "neutral" and other_bias != expected:
+                        log.info("%s ignoré : %s corrélé %.2f avec biais opposé (%s)",
+                                 pair, other, corr, other_bias)
+                        vetoed = True
+                        break
+            if vetoed:
+                continue
+
+            # Anti-doublon : un setup stocké max par paire et par jour
+            if setup_already_stored(conn, pair, now.date()):
+                continue
+
+            # Règle 1 trade/jour : seul le 1er setup du jour part sur Telegram,
+            # les suivants sont stockés en base (alerted=0) pour analyse.
+            can_alert = alerts_sent_today(conn) < cfg["scanner"]["max_telegram_alerts_per_day"]
+            sent = False
+            if can_alert:
+                sent = send_message(env["telegram_token"], env["telegram_chat_id"],
+                                    format_setup(setup))
+            insert_setup(conn, setup, alerted=sent)
+            log.info("SETUP %s %s : entrée %.5f SL %.5f TP %.5f — %s",
+                     pair, setup.direction, setup.entry, setup.sl, setup.tp,
+                     "ALERTÉ" if sent else "stocké sans alerte (quota 1/jour atteint)")
+            if sent:
+                alerted.append(pair)
+        except Exception:  # noqa: BLE001 — une paire ne doit pas tuer le cycle
+            log.exception("Erreur pendant le scan de %s", pair)
+    return alerted
+
+
+def main() -> None:
+    cfg = load_config()
+    env = load_env()
+    setup_logging(cfg["paths"]["logs"], "scanner")
+    log_warnings_banner(log)
+    log.info("Scanner SMC/AMD démarré — alertes uniquement, aucune exécution d'ordre.")
+
+    conn = connect(cfg["paths"]["db"])
+    client = MT5Client(env)
+    client.connect()
+
+    interval = cfg["scanner"]["interval_seconds"]
+    try:
+        while True:
+            start = time.monotonic()
+            try:
+                alerted = scan_once(client, cfg, conn, env)
+                write_status(cfg["paths"]["status"],
+                             mt5_connected=client.is_connected(),
+                             last_scan=datetime.now().isoformat(),
+                             pairs=cfg["pairs"], alerted_this_cycle=alerted,
+                             warnings=WARNINGS)
+            except Exception:  # noqa: BLE001 — le scanner ne meurt jamais en silence
+                log.exception("Erreur inattendue pendant le cycle de scan")
+                write_status(cfg["paths"]["status"],
+                             mt5_connected=client.is_connected(),
+                             last_scan=datetime.now().isoformat(),
+                             last_error=datetime.now().isoformat())
+            elapsed = time.monotonic() - start
+            time.sleep(max(1.0, interval - elapsed))
+    except KeyboardInterrupt:
+        log.info("Arrêt demandé (Ctrl+C)")
+    finally:
+        client.shutdown()
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

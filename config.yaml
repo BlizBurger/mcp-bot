@@ -1,0 +1,58 @@
+# =========================================================================
+# Configuration centrale du SMC/AMD Scanner — TOUS les paramètres sont ici.
+# Les secrets (Telegram, identifiants MT5) vont dans .env, pas ici.
+# =========================================================================
+
+pairs: [USDJPY, EURUSD, EURJPY, GBPUSD, GBPJPY, AUDUSD]
+
+timeframes:
+  htf: H4      # biais directionnel
+  ltf: M15     # détection des setups
+
+# Sessions exprimées en HEURE SERVEUR MT5 (vérifie le décalage de ton broker !)
+sessions:
+  asian: "00:00-07:00"
+  killzones:
+    london: "08:00-11:00"
+    newyork: "13:30-16:00"
+
+strategy:
+  risk_reward: 2.0            # TP = risque × ce ratio
+  sl_buffer_pips: 3.0         # buffer de sécurité derrière le niveau de sweep
+  fvg_min_pips: 2.0           # taille minimale d'un FVG
+  equal_level_tolerance_pips: 2.0   # tolérance equal highs/lows (arbitraire — risque d'overfitting)
+  volume_mult: 1.2            # tick_volume bougie impulsive >= 1.2x sa MM20
+  volume_period: 20
+  correlation_threshold: 0.6  # au-delà : paire corrélée avec biais opposé => setup ignoré
+  correlation_window: 50      # en bougies
+  swing_k: 2                  # bougies de chaque côté pour valider un swing
+  ob_lookback: 10             # profondeur de cassure de structure pour un OB
+  liquidity_lookback: 120     # bougies LTF scannées pour les equal highs/lows
+
+scanner:
+  interval_seconds: 300       # scan toutes les 5 minutes
+  history_bars_ltf: 300       # bougies M15 chargées à chaque scan
+  history_bars_htf: 120       # bougies H4 chargées à chaque scan
+  max_telegram_alerts_per_day: 1   # règle FTMO : 1 trade/jour — les setups
+                                   # suivants sont stockés en base mais non alertés
+
+news:
+  file: news_today.txt
+  blackout_minutes: 30        # avant/après toute news High impact
+
+paths:
+  db: data/alerts.db
+  logs: logs
+  status: data/scanner_status.json
+  reports: reports
+
+backtest:
+  days: 60                    # profondeur d'historique par défaut
+  max_trades_per_day: 1       # même règle qu'en live
+  zone_fill_timeout_bars: 16  # bougies max pour que le prix revienne dans la zone
+
+# Taille de pip par paire (fallback si MT5 indisponible, p.ex. pour le backtest
+# des tests). Avec MT5 connecté, la valeur du broker fait foi.
+pip_sizes:
+  default: 0.0001
+  jpy_quote: 0.01

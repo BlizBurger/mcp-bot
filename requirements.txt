@@ -1,0 +1,13 @@
+# Scanner + backtest (Windows requis pour le package MetaTrader5)
+MetaTrader5>=5.0.45 ; sys_platform == "win32"
+pandas>=2.0
+numpy>=1.24
+PyYAML>=6.0
+requests>=2.31
+python-dotenv>=1.0
+
+# Dashboard
+streamlit>=1.30
+
+# Tests
+pytest>=7.4

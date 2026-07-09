@@ -1,0 +1,8 @@
+# Copier vers news_today.txt et remplir CHAQUE MATIN (Forex Factory / Investing.com).
+# Format : HH:MM DEVISE Nom de l'événement Impact
+# L'impact est le DERNIER mot de la ligne (High / Medium / Low).
+# Seules les news "High" déclenchent le blackout de 30 min avant/après.
+# Les heures sont interprétées dans le fuseau de la machine qui fait tourner le scanner.
+08:30 USD Non-Farm Payrolls High
+10:00 EUR Discours BCE Medium
+14:00 GBP BoE Rate Decision High
