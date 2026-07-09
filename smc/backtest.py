@@ -43,7 +43,8 @@ class Trade:
     sl: float
     tp: float
     exit_price: float
-    result_r: float  # multiple de R (+rr si TP, -1 si SL)
+    result_r: float   # multiple de R après déduction du spread
+    spread_r: float   # coût du spread exprimé en R (déjà déduit de result_r)
 
 
 def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
@@ -53,6 +54,8 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
     respecter la règle max_trades_per_day globale, comme en live."""
     trades: list[Trade] = []
     max_per_day = cfg["backtest"]["max_trades_per_day"]
+    spread_cfg = cfg["backtest"].get("spread_pips", {})
+    spread = float(spread_cfg.get(pair, spread_cfg.get("default", 0.0))) * pip
     tail = cfg["scanner"]["history_bars_ltf"]
     open_until: datetime | None = None  # pas de nouveau signal tant qu'un trade est ouvert
 
@@ -90,11 +93,17 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
         if exit_price is None:
             continue  # trade encore ouvert en fin d'historique : ignoré
 
+        # Coût du spread : payé une fois par aller-retour, exprimé en R
+        risk = abs(entry - sl)
+        spread_r = spread / risk if risk > 0 else 0.0
+        result_r -= spread_r
+
         trades.append(Trade(pair=pair, direction=setup.direction,
                             zone_kind=setup.zone.kind, swept=setup.sweep is not None,
                             open_time=now, close_time=close_time,
                             entry=entry, sl=sl, tp=tp,
-                            exit_price=exit_price, result_r=result_r))
+                            exit_price=exit_price, result_r=result_r,
+                            spread_r=spread_r))
         daily_trades[day] = daily_trades.get(day, 0) + 1
         open_until = close_time
     return trades

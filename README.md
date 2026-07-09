@@ -24,8 +24,10 @@ de backtest, dashboard) et ne doivent pas être retirées :
 4. **Le filtre news dépend à 100 % du remplissage manuel de
    `news_today.txt` chaque matin** — ce n'est pas un flux temps réel. Fichier
    vide ou absent = filtre inactif (le scanner le signale en WARNING).
-5. **Le backtest simule sur mèches M15, pas tick par tick** : spread et
-   slippage réels non modélisés ; si SL et TP sont touchés dans la même
+5. **Le backtest simule sur mèches M15, pas tick par tick** : le spread est
+   modélisé par une valeur fixe par paire (`backtest.spread_pips`, une
+   approximation grossière — le vrai spread s'élargit sur les news) et le
+   slippage n'est pas modélisé ; si SL et TP sont touchés dans la même
    bougie, le trade est compté perdant (hypothèse conservatrice). Les
    résultats réels seront probablement moins bons.
 
@@ -46,8 +48,10 @@ Filtres de confluence :
   des deux devises de la paire (lu depuis `news_today.txt`).
 
 SL derrière l'extrême du sweep + buffer en pips ; TP = risque × R:R (2.0 par
-défaut). Règle FTMO : **1 alerte Telegram par jour maximum** — les setups
-suivants sont stockés en base sans alerte.
+défaut). Un setup dont le risque entrée→SL est inférieur à
+`strategy.min_risk_pips` (8 pips par défaut) est rejeté : trop petit pour
+survivre au spread. Règle FTMO : **1 alerte Telegram par jour maximum** — les
+setups suivants sont stockés en base sans alerte.
 
 Le scanner live et le backtest utilisent **exactement la même fonction de
 détection** (`smc.core.find_amd_setup`) : ce qui est backtesté est ce qui

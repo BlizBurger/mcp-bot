@@ -19,6 +19,8 @@ sessions:
 strategy:
   risk_reward: 2.0            # TP = risque × ce ratio
   sl_buffer_pips: 3.0         # buffer de sécurité derrière le niveau de sweep
+  min_risk_pips: 8.0          # risque minimum entrée->SL : en dessous, le setup
+                              # est rejeté (le spread mangerait tout le risque)
   fvg_min_pips: 2.0           # taille minimale d'un FVG
   equal_level_tolerance_pips: 2.0   # tolérance equal highs/lows (arbitraire — risque d'overfitting)
   volume_mult: 1.2            # tick_volume bougie impulsive >= 1.2x sa MM20
@@ -50,6 +52,16 @@ backtest:
   days: 60                    # profondeur d'historique par défaut
   max_trades_per_day: 1       # même règle qu'en live
   zone_fill_timeout_bars: 16  # bougies max pour que le prix revienne dans la zone
+  # Spread modélisé (en pips, coût déduit de chaque trade). Valeurs FTMO
+  # approximatives en conditions calmes — le spread réel s'élargit sur les news.
+  spread_pips:
+    default: 1.0
+    EURUSD: 0.8
+    GBPUSD: 1.0
+    AUDUSD: 0.9
+    USDJPY: 1.0
+    EURJPY: 1.6
+    GBPJPY: 2.2
 
 # Taille de pip par paire (fallback si MT5 indisponible, p.ex. pour le backtest
 # des tests). Avec MT5 connecté, la valeur du broker fait foi.

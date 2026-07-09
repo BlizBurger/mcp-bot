@@ -13,8 +13,10 @@ WARNINGS = [
     "Le tick_volume MT5 n'est pas un vrai volume centralisé (le forex n'en a pas).",
     "Le filtre news dépend à 100% du remplissage manuel de news_today.txt "
     "chaque matin — ce n'est pas un flux temps réel.",
-    "Le backtest simule sur mèches M15, pas tick par tick : spread et slippage "
-    "réels non modélisés, les résultats réels seront probablement moins bons.",
+    "Le backtest simule sur mèches M15, pas tick par tick : le spread est "
+    "modélisé par une valeur fixe par paire (approximation grossière) et le "
+    "slippage n'est pas modélisé — les résultats réels seront probablement "
+    "moins bons.",
 ]
 
 __version__ = "1.0.0"

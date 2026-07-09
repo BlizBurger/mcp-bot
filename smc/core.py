@@ -422,8 +422,16 @@ def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
 
     protected = sweep.extreme if sweep else (zone.bottom if direction == "long" else zone.top)
     entry = price
-    sl, tp = compute_sl_tp(direction, entry, protected,
-                           s["sl_buffer_pips"], pip_size, s["risk_reward"])
+    try:
+        sl, tp = compute_sl_tp(direction, entry, protected,
+                               s["sl_buffer_pips"], pip_size, s["risk_reward"])
+    except ValueError:
+        # prix déjà repassé de l'autre côté du niveau protégé : setup caduc
+        return None
+    # Risque minimum : un SL collé à l'entrée (sweep déjà "consommé") donne un
+    # trade intradable en réel — le spread mangerait tout le risque.
+    if abs(entry - sl) < s.get("min_risk_pips", 0.0) * pip_size:
+        return None
     return Setup(pair=pair, direction=direction, zone=zone, sweep=sweep,
                  entry=entry, sl=sl, tp=tp, rr=s["risk_reward"], time=now,
                  comments=[f"biais H4 {bias}",

@@ -104,6 +104,9 @@ def render_report(trades: pd.DataFrame, stats: dict, per_pair: dict,
 <ul>{warn_items}</ul></div>
 
 <h2>Statistiques globales (en multiples de R)</h2>
+<p style="font-size:0.85rem;color:#666">Un spread fixe par paire (configurable
+dans <code>config.yaml</code>) est déduit de chaque trade — approximation
+grossière, le spread réel varie. Le slippage n'est pas modélisé.</p>
 {_fmt_stats(stats)}
 
 <h2>Courbe d'équité (R cumulés)</h2>

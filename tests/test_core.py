@@ -390,3 +390,18 @@ class TestFindAMDSetup:
         flat_htf = make_df([(1.0, 1.001, 0.999, 1.0)] * 40)
         assert find_amd_setup("EURUSD", flat_htf, self.ltf_amd_day(),
                               self.CFG, pip_size=0.0001) is None
+
+    def test_min_risk_pips_rejects_tiny_risk(self):
+        # même scénario valide, mais avec un risque minimum énorme : rejeté
+        cfg = {**self.CFG, "strategy": {**self.CFG["strategy"],
+                                        "min_risk_pips": 100.0}}
+        assert find_amd_setup("EURUSD", self.bullish_htf(), self.ltf_amd_day(),
+                              cfg, pip_size=0.0001) is None
+
+    def test_min_risk_pips_accepts_normal_risk(self):
+        # risque du scénario ≈ 63 pips : passe avec un minimum de 8 pips
+        cfg = {**self.CFG, "strategy": {**self.CFG["strategy"],
+                                        "min_risk_pips": 8.0}}
+        setup = find_amd_setup("EURUSD", self.bullish_htf(), self.ltf_amd_day(),
+                               cfg, pip_size=0.0001)
+        assert setup is not None
