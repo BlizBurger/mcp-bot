@@ -184,37 +184,109 @@ def compute_stats(trades_df: pd.DataFrame) -> dict:
     }
 
 
-def run_backtest(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
+def fetch_data(cfg: dict, pairs: list[str], days: int) -> dict:
+    """Télécharge une seule fois l'historique de toutes les paires."""
     env = load_env()
     client = MT5Client(env)
     client.connect()
     end = datetime.now()
     start = end - timedelta(days=days)
-    all_trades: list[Trade] = []
-    daily_trades: dict = {}  # partagé : 1 trade/jour toutes paires confondues
+    data: dict = {}
     try:
         for pair in pairs:
-            log.info("Backtest %s (%d jours)...", pair, days)
+            log.info("Chargement de l'historique %s (%d jours)...", pair, days)
             try:
                 pip = client.pip_size(pair)
             except Exception:
                 pip = pip_size_fallback(pair, cfg)
-            htf = client.get_rates_range(pair, cfg["timeframes"]["htf"],
-                                         start - timedelta(days=30), end)
-            ltf = client.get_rates_range(pair, cfg["timeframes"]["ltf"], start, end)
-            d1 = None
-            if cfg["strategy"].get("require_d1_alignment"):
-                d1 = client.get_rates_range(pair, "D1",
-                                            start - timedelta(days=200), end)
-            trades = simulate_pair(pair, htf, ltf, cfg, pip, daily_trades, d1=d1)
-            log.info("%s : %d trade(s)", pair, len(trades))
-            all_trades.extend(trades)
+            data[pair] = {
+                "pip": pip,
+                "htf": client.get_rates_range(pair, cfg["timeframes"]["htf"],
+                                              start - timedelta(days=30), end),
+                "ltf": client.get_rates_range(pair, cfg["timeframes"]["ltf"],
+                                              start, end),
+                "d1": client.get_rates_range(pair, "D1",
+                                             start - timedelta(days=200), end),
+            }
     finally:
         client.shutdown()
+    return data
+
+
+def simulate_all(cfg: dict, data: dict) -> pd.DataFrame:
+    all_trades: list[Trade] = []
+    daily_trades: dict = {}  # partagé : 1 trade/jour toutes paires confondues
+    for pair, d in data.items():
+        all_trades.extend(simulate_pair(pair, d["htf"], d["ltf"], cfg,
+                                        d["pip"], daily_trades, d1=d["d1"]))
     df = pd.DataFrame([t.__dict__ for t in all_trades])
     if not df.empty:
         df = df.sort_values("open_time").reset_index(drop=True)
     return df
+
+
+def run_backtest(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
+    return simulate_all(cfg, fetch_data(cfg, pairs, days))
+
+
+# ---------------------------------------------------------------------------
+# Mode --compare : mesurer l'effet de chaque option isolément
+# ---------------------------------------------------------------------------
+
+def _cfg_with(cfg: dict, overrides: dict) -> dict:
+    """Copie profonde de la config avec des remplacements {(section, clé): valeur}."""
+    import copy
+    out = copy.deepcopy(cfg)
+    for (section, key), value in overrides.items():
+        out[section][key] = value
+    return out
+
+
+_ALL_OFF = {
+    ("strategy", "require_rejection_candle"): False,
+    ("strategy", "require_d1_alignment"): False,
+    ("strategy", "entry_at_zone_edge"): False,
+    ("strategy", "min_sweep_depth_pips"): 0.0,
+    ("calendar", "skip_dates"): [],
+    ("calendar", "skip_friday_after"): "",
+}
+
+_VARIANTS: list[tuple[str, dict]] = [
+    ("config actuelle (tout activé)", {}),
+    ("sans bougie de rejet", {("strategy", "require_rejection_candle"): False}),
+    ("sans alignement D1", {("strategy", "require_d1_alignment"): False}),
+    ("sans ordre limite (entrée marché)", {("strategy", "entry_at_zone_edge"): False}),
+    ("sans profondeur de sweep min", {("strategy", "min_sweep_depth_pips"): 0.0}),
+    ("sans calendrier", {("calendar", "skip_dates"): [],
+                         ("calendar", "skip_friday_after"): ""}),
+    ("sans breakeven", {("exits", "breakeven_after_r"): 0}),
+    ("sans sortie au temps", {("exits", "max_holding_bars"): 0}),
+    ("aucun nouveau filtre (base)", dict(_ALL_OFF)),
+]
+
+
+def run_compare(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
+    """Rejoue la même période avec chaque option retirée une à une.
+    ⚠️ Outil de diagnostic : comparer des variantes sur le même passé reste
+    de l'exploration in-sample — le risque d'overfitting s'applique."""
+    data = fetch_data(cfg, pairs, days)
+    rows = []
+    for name, overrides in _VARIANTS:
+        df = simulate_all(_cfg_with(cfg, overrides), data)
+        s = compute_stats(df)
+        rows.append({
+            "variante": name,
+            "trades": s.get("trades", 0),
+            "win_rate_%": round(s["win_rate"] * 100, 1) if s.get("trades") else None,
+            "r_moyen": round(s["avg_r"], 2) if s.get("trades") else None,
+            "total_r": round(s["total_r"], 1) if s.get("trades") else None,
+            "profit_factor": round(s["profit_factor"], 2)
+            if s.get("trades") and s["profit_factor"] != float("inf") else None,
+        })
+        log.info("%-38s : %3d trades | WR %s%% | total %s R | PF %s",
+                 name, rows[-1]["trades"], rows[-1]["win_rate_%"],
+                 rows[-1]["total_r"], rows[-1]["profit_factor"])
+    return pd.DataFrame(rows)
 
 
 def main() -> None:
@@ -225,8 +297,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest SMC/AMD sur historique MT5")
     parser.add_argument("--days", type=int, default=cfg["backtest"]["days"])
     parser.add_argument("--pairs", type=str, default=",".join(cfg["pairs"]))
+    parser.add_argument("--compare", action="store_true",
+                        help="rejoue la période en retirant chaque option une à "
+                             "une pour mesurer son effet (diagnostic in-sample)")
     args = parser.parse_args()
     pairs = [p.strip().upper() for p in args.pairs.split(",") if p.strip()]
+
+    if args.compare:
+        result = run_compare(cfg, pairs, args.days)
+        out_dir = Path(cfg["paths"]["reports"])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"compare_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        result.to_csv(path, index=False)
+        log.info("Comparatif écrit : %s", path)
+        log.warning("⚠️ Comparer des variantes sur le même passé = exploration "
+                    "in-sample. Ne garder que ce qui a une justification, et "
+                    "valider en démo avant d'y croire.")
+        return
 
     trades_df = run_backtest(cfg, pairs, args.days)
 
