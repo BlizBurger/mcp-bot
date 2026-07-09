@@ -34,6 +34,15 @@ strategy:
   entry_zone_depth: 0.5            # 0 = bord proximal de la zone, 0.5 = milieu,
                                    # 1 = bord distal (plus profond = meilleur
                                    # prix, moins de remplissages)
+  fvg_min_pips: 2.0           # taille minimale d'un FVG
+  equal_level_tolerance_pips: 2.0   # tolérance equal highs/lows (arbitraire — risque d'overfitting)
+  volume_mult: 1.2            # tick_volume bougie impulsive >= 1.2x sa MM20
+  volume_period: 20
+  correlation_threshold: 0.6  # au-delà : paire corrélée avec biais opposé => setup ignoré
+  correlation_window: 50      # en bougies
+  swing_k: 2                  # bougies de chaque côté pour valider un swing
+  ob_lookback: 10             # profondeur de cassure de structure pour un OB
+  liquidity_lookback: 120     # bougies LTF scannées pour les equal highs/lows
 
 exits:
   breakeven_after_r: 1.0      # SL remonté à l'entrée quand le trade atteint
@@ -52,15 +61,6 @@ calendar:
     - "12-31"
     - "01-01"
     - "01-02"
-  fvg_min_pips: 2.0           # taille minimale d'un FVG
-  equal_level_tolerance_pips: 2.0   # tolérance equal highs/lows (arbitraire — risque d'overfitting)
-  volume_mult: 1.2            # tick_volume bougie impulsive >= 1.2x sa MM20
-  volume_period: 20
-  correlation_threshold: 0.6  # au-delà : paire corrélée avec biais opposé => setup ignoré
-  correlation_window: 50      # en bougies
-  swing_k: 2                  # bougies de chaque côté pour valider un swing
-  ob_lookback: 10             # profondeur de cassure de structure pour un OB
-  liquidity_lookback: 120     # bougies LTF scannées pour les equal highs/lows
 
 scanner:
   interval_seconds: 300       # scan toutes les 5 minutes

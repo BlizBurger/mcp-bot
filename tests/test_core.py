@@ -521,3 +521,36 @@ class TestNewSetupFilters:
         # la fixture se déroule le 2026-07-06
         assert find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(),
                               cfg, pip_size=0.0001) is None
+
+
+# ---------------------------------------------------------------------------
+# Le vrai config.yaml doit contenir toutes les clés que le code utilise
+# ---------------------------------------------------------------------------
+
+class TestRealConfig:
+    def test_config_yaml_complete(self):
+        from smc.config import load_config
+        cfg = load_config()
+        for key in ["risk_reward", "sl_buffer_pips", "min_risk_pips",
+                    "fvg_min_pips", "equal_level_tolerance_pips",
+                    "volume_mult", "volume_period", "correlation_threshold",
+                    "correlation_window", "swing_k", "ob_lookback",
+                    "liquidity_lookback", "require_rejection_candle",
+                    "min_sweep_depth_pips", "require_d1_alignment",
+                    "entry_at_zone_edge", "entry_zone_depth"]:
+            assert key in cfg["strategy"], f"strategy.{key} manquant"
+        assert "breakeven_after_r" in cfg["exits"]
+        assert "max_holding_bars" in cfg["exits"]
+        assert "skip_dates" in cfg["calendar"]
+        assert "asian" in cfg["sessions"]
+        assert "spread_pips" in cfg["backtest"]
+
+    def test_find_setup_runs_with_real_config(self):
+        """Le pipeline complet doit tourner avec le config.yaml du dépôt
+        (attrape les KeyError de clés manquantes)."""
+        from smc.config import load_config
+        cfg = load_config()
+        t = TestFindAMDSetup()
+        # ne doit pas lever d'exception, peu importe le résultat
+        find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(), cfg,
+                       pip_size=0.0001, d1_df=t.bullish_htf())
