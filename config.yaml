@@ -100,6 +100,8 @@ paths:
 backtest:
   days: 60                    # profondeur d'historique par défaut
   max_trades_per_day: 1       # même règle qu'en live
+  charts: true                # génère Backtest/<date>/ : 1 image par trade,
+                              # courbe d'équité, rapport, CSV
   zone_fill_timeout_bars: 16  # bougies max pour que le prix revienne dans la zone
   # Spread modélisé (en pips, coût déduit de chaque trade). Valeurs FTMO
   # approximatives en conditions calmes — le spread réel s'élargit sur les news.

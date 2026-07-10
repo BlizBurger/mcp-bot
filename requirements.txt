@@ -9,5 +9,8 @@ python-dotenv>=1.0
 # Dashboard
 streamlit>=1.30
 
+# Images de trades / courbe d'équité (dossier Backtest/)
+matplotlib>=3.8
+
 # Tests
 pytest>=7.4

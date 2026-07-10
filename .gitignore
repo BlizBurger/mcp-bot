@@ -5,4 +5,5 @@ __pycache__/
 logs/
 data/
 reports/
+Backtest/
 news_today.txt

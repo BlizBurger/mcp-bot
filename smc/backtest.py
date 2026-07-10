@@ -393,7 +393,8 @@ def main() -> None:
                     "valider en démo avant d'y croire.")
         return
 
-    trades_df = run_backtest(cfg, pairs, args.days)
+    data = fetch_data(cfg, pairs, args.days)
+    trades_df = simulate_all(cfg, data)
 
     out_dir = Path(cfg["paths"]["reports"])
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -405,12 +406,21 @@ def main() -> None:
     stats = compute_stats(trades_df)
     per_pair = {p: compute_stats(trades_df[trades_df["pair"] == p])
                 for p in pairs} if not trades_df.empty else {}
+    html = render_report(trades_df, stats, per_pair, args.days)
     html_path = out_dir / f"report_{stamp}.html"
-    html_path.write_text(render_report(trades_df, stats, per_pair, args.days),
-                         encoding="utf-8")
+    html_path.write_text(html, encoding="utf-8")
     # copie stable pour le dashboard
-    (out_dir / "latest.html").write_text(
-        render_report(trades_df, stats, per_pair, args.days), encoding="utf-8")
+    (out_dir / "latest.html").write_text(html, encoding="utf-8")
+
+    # Dossier Backtest/ : images des trades + courbe d'équité + rapport
+    if cfg["backtest"].get("charts", True):
+        try:
+            from smc.charts import render_backtest_folder
+            render_backtest_folder(trades_df, data, html,
+                                   Path(cfg["paths"]["reports"]).parent, stamp)
+        except ImportError:
+            log.warning("matplotlib manquant — images non générées "
+                        "(pip install matplotlib)")
 
     log.info("Terminé : %d trades — rapport : %s (CSV : %s)",
              stats.get("trades", 0), html_path, csv_path)
