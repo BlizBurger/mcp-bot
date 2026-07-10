@@ -60,10 +60,14 @@ def _session_of(ts: datetime, cfg: dict) -> str:
 
 
 def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
-                  cfg: dict, pip: float, daily_trades: dict,
+                  cfg: dict, pip: float, daily_trades: dict | None = None,
                   d1: pd.DataFrame | None = None) -> list[Trade]:
-    """Rejoue bougie par bougie. `daily_trades` (partagé entre paires) fait
-    respecter la règle max_trades_per_day globale, comme en live."""
+    """Rejoue bougie par bougie une seule paire.
+
+    `daily_trades=None` désactive le quota journalier : simulate_all applique
+    alors la règle max_trades_per_day chronologiquement toutes paires
+    confondues (comme en live), au lieu de servir les paires dans l'ordre de
+    la boucle."""
     trades: list[Trade] = []
     max_per_day = cfg["backtest"]["max_trades_per_day"]
     spread_cfg = cfg["backtest"].get("spread_pips", {})
@@ -77,7 +81,8 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
 
     for i in range(50, len(ltf) - 1):
         now = ltf["time"].iloc[i]
-        if daily_trades.get(now.date(), 0) >= max_per_day:
+        if daily_trades is not None and \
+                daily_trades.get(now.date(), 0) >= max_per_day:
             continue
         if open_until and now < open_until:
             continue
@@ -165,7 +170,8 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
                             session=_session_of(open_time, cfg),
                             exit_kind=exit_kind,
                             score=setup.score, strategy=setup.strategy))
-        daily_trades[open_time.date()] = daily_trades.get(open_time.date(), 0) + 1
+        if daily_trades is not None:
+            daily_trades[open_time.date()] = daily_trades.get(open_time.date(), 0) + 1
         open_until = close_time
     return trades
 
@@ -219,14 +225,27 @@ def fetch_data(cfg: dict, pairs: list[str], days: int) -> dict:
 
 
 def simulate_all(cfg: dict, data: dict) -> pd.DataFrame:
+    """Simule chaque paire sans quota, puis applique la règle
+    max_trades_per_day CHRONOLOGIQUEMENT toutes paires confondues — le
+    premier setup du jour prend la place, comme en live."""
     all_trades: list[Trade] = []
-    daily_trades: dict = {}  # partagé : 1 trade/jour toutes paires confondues
     for pair, d in data.items():
         all_trades.extend(simulate_pair(pair, d["htf"], d["ltf"], cfg,
-                                        d["pip"], daily_trades, d1=d["d1"]))
+                                        d["pip"], daily_trades=None, d1=d["d1"]))
     df = pd.DataFrame([t.__dict__ for t in all_trades])
-    if not df.empty:
-        df = df.sort_values("open_time").reset_index(drop=True)
+    if df.empty:
+        return df
+    df = df.sort_values("open_time").reset_index(drop=True)
+    max_per_day = cfg["backtest"]["max_trades_per_day"]
+    if max_per_day:
+        counts: dict = {}
+        keep = []
+        for idx, row in df.iterrows():
+            day = row["open_time"].date()
+            if counts.get(day, 0) < max_per_day:
+                keep.append(idx)
+                counts[day] = counts.get(day, 0) + 1
+        df = df.loc[keep].reset_index(drop=True)
     return df
 
 
