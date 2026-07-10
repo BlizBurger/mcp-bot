@@ -129,6 +129,9 @@ def render_report(trades: pd.DataFrame, stats: dict, per_pair: dict,
         if "exit_kind" in trades.columns:
             breakdowns += _breakdown_table(trades, "exit_kind",
                                            "Stats par type de sortie")
+        if "score" in trades.columns and trades["score"].max() > 0:
+            breakdowns += _breakdown_table(trades, "score",
+                                           "Stats par score de confluence")
         equity_html = _equity_svg(trades["result_r"].cumsum().tolist())
         trades_rows = "".join(
             f"<tr><td>{t.pair}</td><td>{t.direction}</td><td>{t.zone_kind}"

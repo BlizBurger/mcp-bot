@@ -22,7 +22,8 @@ from pathlib import Path
 
 from smc import WARNINGS
 from smc.config import load_config, load_env
-from smc.core import correlation, find_amd_setup, htf_bias, news_blackout
+from smc.core import correlation, htf_bias, news_blackout
+from smc.strategies import get_strategy
 from smc.db import alerts_sent_today, connect, insert_setup, setup_already_stored
 from smc.logging_setup import log_warnings_banner, setup_logging
 from smc.mt5_client import MT5Client, MT5Error
@@ -79,8 +80,8 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
                 continue
 
             pip = client.pip_size(pair)
-            setup = find_amd_setup(pair, d["htf"], d["ltf"], cfg, pip,
-                                   d1_df=d.get("d1"))
+            strategy_fn = get_strategy(cfg.get("strategy_name", "amd_asian"))
+            setup = strategy_fn(pair, d, cfg, pip)
             if setup is None:
                 continue
 
@@ -131,7 +132,8 @@ def main() -> None:
     env = load_env()
     setup_logging(cfg["paths"]["logs"], "scanner")
     log_warnings_banner(log)
-    log.info("Scanner SMC/AMD démarré — alertes uniquement, aucune exécution d'ordre.")
+    log.info("Scanner SMC démarré — stratégie: %s — alertes uniquement, "
+             "aucune exécution d'ordre.", cfg.get("strategy_name", "amd_asian"))
 
     conn = connect(cfg["paths"]["db"])
     client = MT5Client(env)

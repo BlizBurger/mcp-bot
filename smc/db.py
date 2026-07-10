@@ -42,6 +42,13 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    # migrations légères pour les bases créées avant l'ajout de ces colonnes
+    for col, ddl in (("score", "INTEGER NOT NULL DEFAULT 0"),
+                     ("strategy", "TEXT NOT NULL DEFAULT 'amd_asian'")):
+        try:
+            conn.execute(f"ALTER TABLE alerts ADD COLUMN {col} {ddl}")
+        except sqlite3.OperationalError:
+            pass  # colonne déjà présente
     return conn
 
 
@@ -49,8 +56,8 @@ def insert_setup(conn: sqlite3.Connection, setup: Setup, alerted: bool) -> int:
     cur = conn.execute(
         """INSERT INTO alerts (created_at, pair, direction, zone_kind, zone_top,
                zone_bottom, swept, sweep_side, sweep_level, entry, sl, tp, rr,
-               alerted, comment)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               alerted, comment, score, strategy)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             setup.time.isoformat(), setup.pair, setup.direction,
             setup.zone.kind, setup.zone.top, setup.zone.bottom,
@@ -59,6 +66,7 @@ def insert_setup(conn: sqlite3.Connection, setup: Setup, alerted: bool) -> int:
             setup.sweep.level if setup.sweep else None,
             setup.entry, setup.sl, setup.tp, setup.rr,
             1 if alerted else 0, " | ".join(setup.comments),
+            setup.score, setup.strategy,
         ),
     )
     conn.commit()

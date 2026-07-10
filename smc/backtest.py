@@ -23,7 +23,8 @@ from pathlib import Path
 import pandas as pd
 
 from smc.config import load_config, load_env, pip_size_fallback
-from smc.core import find_amd_setup, in_window
+from smc.core import in_window
+from smc.strategies import STRATEGIES, get_strategy
 from smc.logging_setup import log_warnings_banner, setup_logging
 from smc.mt5_client import MT5Client
 from smc.report import render_report
@@ -47,6 +48,8 @@ class Trade:
     spread_r: float   # coût du spread exprimé en R (déjà déduit de result_r)
     session: str      # killzone d'ouverture (london / newyork / autre)
     exit_kind: str    # tp / sl / breakeven / time
+    score: int        # score de confluence du setup (0 si stratégie sans scoring)
+    strategy: str     # stratégie qui a produit le trade
 
 
 def _session_of(ts: datetime, cfg: dict) -> str:
@@ -86,8 +89,9 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
         if d1 is not None:
             d1_slice = d1[d1["time"] <= now].tail(
                 cfg["scanner"].get("history_bars_d1", 60)).reset_index(drop=True)
-        setup = find_amd_setup(pair, htf_slice, ltf_slice, cfg, pip, now=now,
-                               d1_df=d1_slice)
+        strategy_fn = get_strategy(cfg.get("strategy_name", "amd_asian"))
+        setup = strategy_fn(pair, {"htf": htf_slice, "ltf": ltf_slice,
+                                   "d1": d1_slice}, cfg, pip, now=now)
         if setup is None:
             continue
         is_long = setup.direction == "long"
@@ -159,7 +163,8 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
                             exit_price=exit_price, result_r=result_r,
                             spread_r=spread_r,
                             session=_session_of(open_time, cfg),
-                            exit_kind=exit_kind))
+                            exit_kind=exit_kind,
+                            score=setup.score, strategy=setup.strategy))
         daily_trades[open_time.date()] = daily_trades.get(open_time.date(), 0) + 1
         open_until = close_time
     return trades
@@ -265,6 +270,42 @@ _VARIANTS: list[tuple[str, dict]] = [
 ]
 
 
+def run_compare_strategies(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
+    """Backtest chaque stratégie (et les paliers de score pour sweep_bos) sur
+    la même période. ⚠️ Exploration in-sample, risque d'overfitting."""
+    import copy
+    data = fetch_data(cfg, pairs, days)
+    variants: list[tuple[str, dict]] = []
+    for name in STRATEGIES:
+        base = copy.deepcopy(cfg)
+        base["strategy_name"] = name
+        variants.append((name, base))
+        if name == "sweep_bos":
+            for min_score in (2, 3):
+                v = copy.deepcopy(base)
+                v["sweep_bos"]["min_score"] = min_score
+                variants.append((f"{name} (score >= {min_score})", v))
+    rows = []
+    for label, vcfg in variants:
+        df = simulate_all(vcfg, data)
+        s = compute_stats(df)
+        rows.append({
+            "strategie": label,
+            "trades": s.get("trades", 0),
+            "win_rate_%": round(s["win_rate"] * 100, 1) if s.get("trades") else None,
+            "r_moyen": round(s["avg_r"], 2) if s.get("trades") else None,
+            "total_r": round(s["total_r"], 1) if s.get("trades") else None,
+            "profit_factor": round(s["profit_factor"], 2)
+            if s.get("trades") and s["profit_factor"] != float("inf") else None,
+            "drawdown_r": round(s["max_drawdown_r"], 1) if s.get("trades") else None,
+        })
+        log.info("%-28s : %3d trades | WR %s%% | total %s R | PF %s | DD %s R",
+                 label, rows[-1]["trades"], rows[-1]["win_rate_%"],
+                 rows[-1]["total_r"], rows[-1]["profit_factor"],
+                 rows[-1]["drawdown_r"])
+    return pd.DataFrame(rows)
+
+
 def run_compare(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
     """Rejoue la même période avec chaque option retirée une à une.
     ⚠️ Outil de diagnostic : comparer des variantes sur le même passé reste
@@ -300,8 +341,26 @@ def main() -> None:
     parser.add_argument("--compare", action="store_true",
                         help="rejoue la période en retirant chaque option une à "
                              "une pour mesurer son effet (diagnostic in-sample)")
+    parser.add_argument("--compare-strategies", action="store_true",
+                        help="backtest chaque stratégie sur la même période")
+    parser.add_argument("--strategy", type=str, default=None,
+                        help=f"stratégie à utiliser ({', '.join(STRATEGIES)}) ; "
+                             "défaut : strategy_name du config.yaml")
     args = parser.parse_args()
     pairs = [p.strip().upper() for p in args.pairs.split(",") if p.strip()]
+    if args.strategy:
+        cfg["strategy_name"] = args.strategy
+        get_strategy(args.strategy)  # valide le nom tout de suite
+
+    if args.compare_strategies:
+        result = run_compare_strategies(cfg, pairs, args.days)
+        out_dir = Path(cfg["paths"]["reports"])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"strategies_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        result.to_csv(path, index=False)
+        log.info("Comparatif stratégies écrit : %s", path)
+        log.warning("⚠️ Comparaison in-sample — valider en démo avant d'y croire.")
+        return
 
     if args.compare:
         result = run_compare(cfg, pairs, args.days)

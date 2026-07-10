@@ -5,6 +5,23 @@
 
 pairs: [USDJPY, EURUSD, EURJPY, GBPUSD, GBPJPY, AUDUSD]
 
+# Stratégie active : amd_asian (v1) ou sweep_bos (v2)
+strategy_name: sweep_bos
+
+# Paramètres de la stratégie sweep_bos (v2 : sweep 4H + BOS M15 + scoring)
+sweep_bos:
+  liquidity_lookback_h4: 50   # bougies H4 pour construire les niveaux
+  swing_k_h4: 3               # swing H4 significatif : 3 bougies de chaque côté
+  equal_tolerance_pct: 0.05   # equal highs/lows : ±0.05% du prix
+  max_levels_per_side: 5      # niveaux gardés en mémoire de chaque côté
+  min_sweep_pips: 1.0         # dépassement minimal de la mèche (à calibrer)
+  min_wick_ratio: 0.6         # mèche de rejet >= 60% du range de la bougie
+  bos_window_m15: 20          # fenêtre max (bougies M15) pour le BOS, sinon expiré
+  bos_swing_k: 2              # pivot M15 : 2 bougies de chaque côté
+  sl_buffer_pct: 0.12         # buffer SL en % du prix (0.10-0.15)
+  min_rr: 2.0                 # R:R minimum ; TP = liquidité opposée si >= min_rr
+  min_score: 0                # ne garder que les setups avec score >= N (0-6)
+
 timeframes:
   htf: H4      # biais directionnel
   ltf: M15     # détection des setups
