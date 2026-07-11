@@ -323,7 +323,7 @@ _SWEEP_VARIANTS: list[tuple[str, dict, set | None]] = [
                          ["FVG", "IFVG", "Breaker"]}, None),
     ("sortie au temps à 48h", {("exits", "max_holding_bars"): 192}, None),
     ("sans breakeven", {("exits", "breakeven_after_r"): 0}, None),
-    ("prise partielle 50% à +1R", {("exits", "partial_at_r"): 1.0}, None),
+    ("sans prise partielle", {("exits", "partial_at_r"): 0}, None),
     ("majors + crosses JPY", {}, _JPY_MAJORS),
 ]
 
