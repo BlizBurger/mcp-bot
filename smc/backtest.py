@@ -76,6 +76,8 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
     exits = cfg.get("exits", {})
     be_r = float(exits.get("breakeven_after_r", 0) or 0)
     max_bars = int(exits.get("max_holding_bars", 0) or 0)
+    partial_r = float(exits.get("partial_at_r", 0) or 0)
+    partial_frac = float(exits.get("partial_fraction", 0.5))
     tail = cfg["scanner"]["history_bars_ltf"]
     open_until: datetime | None = None  # pas de nouveau signal tant qu'un trade est ouvert
 
@@ -128,8 +130,11 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
         tp = entry + rr * risk if is_long else entry - rr * risk
         open_time = ltf["time"].iloc[fill_idx]
 
-        # --- Gestion : SL (prioritaire), TP, breakeven, sortie au temps ------
+        # --- Gestion : SL (prioritaire), TP, prise partielle, breakeven,
+        # sortie au temps. `realized` = R déjà encaissés par la prise
+        # partielle ; `remaining` = fraction de position encore ouverte.
         cur_sl = sl
+        realized, remaining = 0.0, 1.0
         exit_price, result_r, close_time, exit_kind = None, None, None, None
         for j in range(fill_idx + 1, len(ltf)):
             bar = ltf.iloc[j]
@@ -137,12 +142,20 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
             hit_tp = bar["high"] >= tp if is_long else bar["low"] <= tp
             if hit_sl:  # SL prioritaire si les deux sont touchés (conservateur)
                 exit_price, close_time = cur_sl, bar["time"]
-                result_r = (cur_sl - entry) / risk if is_long else (entry - cur_sl) / risk
+                unit = (cur_sl - entry) / risk if is_long else (entry - cur_sl) / risk
+                result_r = realized + remaining * unit
                 exit_kind = "breakeven" if cur_sl != sl else "sl"
                 break
             if hit_tp:
-                exit_price, result_r, close_time, exit_kind = tp, rr, bar["time"], "tp"
+                exit_price, close_time, exit_kind = tp, bar["time"], "tp"
+                result_r = realized + remaining * rr
                 break
+            if partial_r > 0 and remaining == 1.0:  # prise partielle à +N R
+                reached = bar["high"] >= entry + partial_r * risk if is_long \
+                    else bar["low"] <= entry - partial_r * risk
+                if reached:
+                    realized = partial_frac * partial_r
+                    remaining = 1.0 - partial_frac
             if be_r > 0:  # trade en gain de be_r x R : SL remonté à l'entrée
                 reached = bar["high"] >= entry + be_r * risk if is_long \
                     else bar["low"] <= entry - be_r * risk
@@ -150,8 +163,9 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
                     cur_sl = max(cur_sl, entry) if is_long else min(cur_sl, entry)
             if max_bars and (j - fill_idx) >= max_bars:  # sortie au temps
                 exit_price, close_time = float(bar["close"]), bar["time"]
-                result_r = (exit_price - entry) / risk if is_long \
+                unit = (exit_price - entry) / risk if is_long \
                     else (entry - exit_price) / risk
+                result_r = realized + remaining * unit
                 exit_kind = "time"
                 break
         if exit_price is None:
@@ -309,6 +323,7 @@ _SWEEP_VARIANTS: list[tuple[str, dict, set | None]] = [
                          ["FVG", "IFVG", "Breaker"]}, None),
     ("sortie au temps à 48h", {("exits", "max_holding_bars"): 192}, None),
     ("sans breakeven", {("exits", "breakeven_after_r"): 0}, None),
+    ("prise partielle 50% à +1R", {("exits", "partial_at_r"): 1.0}, None),
     ("majors + crosses JPY", {}, _JPY_MAJORS),
 ]
 

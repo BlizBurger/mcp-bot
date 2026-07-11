@@ -75,6 +75,9 @@ strategy:
 exits:
   breakeven_after_r: 1.0      # SL remonté à l'entrée quand le trade atteint
                               # +1R (0 = désactivé)
+  partial_at_r: 1.0           # prise partielle : encaisser une fraction de la
+                              # position à +N R (0 = désactivé)
+  partial_fraction: 0.5       # fraction encaissée à la prise partielle
   max_holding_bars: 96        # sortie forcée au prix courant après N bougies
                               # LTF (96 x M15 ≈ 1 jour ; 192 ≈ 2 jours ;
                               # 0 = désactivé)

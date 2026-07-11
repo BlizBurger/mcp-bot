@@ -171,3 +171,41 @@ class TestSweepBosSetup:
         assert setup_ob.zone.kind == "OB"
         assert setup_no_ob.zone.kind == "BOS"   # repli : retest du swing cassé
         assert setup_no_ob.entry != setup_ob.entry
+
+
+class TestPartialTake:
+    """Prise partielle : +1R atteint puis retour à l'entrée -> on garde la
+    moitié du 1R encaissé au lieu d'un breakeven à ~0."""
+
+    def test_partial_then_breakeven(self):
+        import pandas as pd
+        from smc.backtest import simulate_all
+
+        h4, m15 = build_scenario()
+        cfg = TestSweepBosSetup().cfg()
+        cfg["scanner"] = {"history_bars_ltf": 300, "history_bars_htf": 120,
+                          "history_bars_d1": 60}
+        cfg["backtest"] = {"max_trades_per_day": 1, "zone_fill_timeout_bars": 16,
+                           "spread_pips": {"default": 0.0}}
+        cfg["exits"] = {"breakeven_after_r": 1.0, "max_holding_bars": 0,
+                        "partial_at_r": 1.0, "partial_fraction": 0.5}
+
+        # entrée attendue ~1.0044, risque ~71 pips -> +1R ~ 1.0115
+        # chemin : retour dans la zone (remplissage du limite), montée au-delà
+        # de +1R, puis retour sous l'entrée (breakeven)
+        last_t = m15["time"].iloc[-1]
+        path = [1.0050, 1.0043]                                  # remplissage
+        path += [1.0043 + 0.0008 * k for k in range(1, 12)]      # jusqu'à ~1.0131
+        path += [1.0131 - 0.0009 * k for k in range(1, 12)]      # retour sous 1.0044
+        rows = [{"time": last_t + pd.Timedelta(minutes=15 * k), "open": p,
+                 "high": p + 0.0003, "low": p - 0.0003, "close": p,
+                 "tick_volume": 100} for k, p in enumerate(path, start=1)]
+        m15x = pd.concat([m15, pd.DataFrame(rows)], ignore_index=True)
+
+        df = simulate_all(cfg, {"EURUSD": {"pip": 0.0001, "htf": h4,
+                                           "ltf": m15x, "d1": None}})
+        assert not df.empty
+        t = df.iloc[0]
+        assert t["exit_kind"] == "breakeven"
+        # moitié encaissée à +1R, moitié rendue à breakeven => ~ +0.5R
+        assert t["result_r"] == pytest.approx(0.5, abs=0.05)

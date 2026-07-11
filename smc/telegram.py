@@ -56,6 +56,10 @@ def format_setup(setup: Setup, exits_cfg: dict | None = None) -> str:
     )
     plan_lines = []
     if exits_cfg:
+        pr = float(exits_cfg.get("partial_at_r", 0) or 0)
+        if pr > 0:
+            frac = float(exits_cfg.get("partial_fraction", 0.5))
+            plan_lines.append(f"→ encaisser {frac:.0%} de la position à +{pr:.1f}R")
         be = float(exits_cfg.get("breakeven_after_r", 0) or 0)
         if be > 0:
             plan_lines.append(f"→ SL à breakeven une fois +{be:.1f}R atteint")
