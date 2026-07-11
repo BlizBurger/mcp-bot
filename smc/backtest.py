@@ -233,9 +233,12 @@ def simulate_all(cfg: dict, data: dict) -> pd.DataFrame:
     max_trades_per_day CHRONOLOGIQUEMENT toutes paires confondues — le
     premier setup du jour prend la place, comme en live."""
     all_trades: list[Trade] = []
-    for pair, d in data.items():
-        all_trades.extend(simulate_pair(pair, d["htf"], d["ltf"], cfg,
-                                        d["pip"], daily_trades=None, d1=d["d1"]))
+    for n, (pair, d) in enumerate(data.items(), start=1):
+        log.info("Simulation %s (%d/%d)...", pair, n, len(data))
+        pair_trades = simulate_pair(pair, d["htf"], d["ltf"], cfg,
+                                    d["pip"], daily_trades=None, d1=d["d1"])
+        log.info("%s : %d signal(aux) avant quota journalier", pair, len(pair_trades))
+        all_trades.extend(pair_trades)
     df = pd.DataFrame([t.__dict__ for t in all_trades])
     if df.empty:
         return df
