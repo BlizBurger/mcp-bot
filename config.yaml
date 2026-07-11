@@ -3,7 +3,12 @@
 # Les secrets (Telegram, identifiants MT5) vont dans .env, pas ici.
 # =========================================================================
 
-pairs: [USDJPY, EURUSD, EURJPY, GBPUSD, GBPJPY, AUDUSD]
+# Univers élargi : majors + crosses (une paire absente chez le broker est
+# ignorée avec un warning, sans faire échouer le scan/backtest)
+pairs: [EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD,
+        EURJPY, GBPJPY, AUDJPY, NZDJPY, CADJPY, CHFJPY,
+        EURGBP, EURCHF, EURAUD, EURCAD,
+        GBPCHF, GBPAUD, AUDCHF, AUDCAD]
 
 # Stratégie active : amd_asian (v1) ou sweep_bos (v2)
 strategy_name: sweep_bos
@@ -21,6 +26,8 @@ sweep_bos:
   sl_buffer_pct: 0.12         # buffer SL en % du prix (0.10-0.15)
   min_rr: 2.0                 # R:R minimum ; TP = liquidité opposée si >= min_rr
   min_score: 0                # ne garder que les setups avec score >= N (0-6)
+  confluence_min_size_atr: 0.5   # un FVG/IFVG compte seulement si sa taille
+                                 # >= 0.5x l'ATR(14) M15 (anti-saturation du score)
 
 timeframes:
   htf: H4      # biais directionnel
@@ -106,13 +113,28 @@ backtest:
   # Spread modélisé (en pips, coût déduit de chaque trade). Valeurs FTMO
   # approximatives en conditions calmes — le spread réel s'élargit sur les news.
   spread_pips:
-    default: 1.0
+    default: 1.5
     EURUSD: 0.8
     GBPUSD: 1.0
-    AUDUSD: 0.9
     USDJPY: 1.0
+    USDCHF: 1.1
+    USDCAD: 1.2
+    AUDUSD: 0.9
+    NZDUSD: 1.3
     EURJPY: 1.6
     GBPJPY: 2.2
+    AUDJPY: 1.5
+    NZDJPY: 1.8
+    CADJPY: 1.7
+    CHFJPY: 1.8
+    EURGBP: 1.2
+    EURCHF: 1.6
+    EURAUD: 2.0
+    EURCAD: 2.0
+    GBPCHF: 2.2
+    GBPAUD: 2.5
+    AUDCHF: 1.5
+    AUDCAD: 1.6
 
 # Taille de pip par paire (fallback si MT5 indisponible, p.ex. pour le backtest
 # des tests). Avec MT5 connecté, la valeur du broker fait foi.

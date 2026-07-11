@@ -26,7 +26,7 @@ from typing import Optional
 
 import pandas as pd
 
-from smc.core import Setup, Sweep, Zone, calendar_blocked, find_fvgs, \
+from smc.core import Setup, Sweep, Zone, atr, calendar_blocked, find_fvgs, \
     find_order_blocks, in_window, swing_points
 
 
@@ -110,10 +110,12 @@ def is_h4_sweep(candle: pd.Series, level: float, side: str,
 # 4. Confluences (score 0-6)
 # ---------------------------------------------------------------------------
 
-def _confluences(leg: pd.DataFrame, direction: str,
-                 pre_leg: pd.DataFrame) -> tuple[dict, list[tuple[str, Zone]]]:
+def _confluences(leg: pd.DataFrame, direction: str, pre_leg: pd.DataFrame,
+                 min_size: float = 0.0) -> tuple[dict, list[tuple[str, Zone]]]:
     """Confluences dans la jambe du BOS. Retourne (drapeaux, zones candidates
-    pour l'entrée). `pre_leg` = bougies avant la jambe (pour les breakers)."""
+    pour l'entrée). `pre_leg` = bougies avant la jambe (pour les breakers).
+    `min_size` = taille minimale (en prix) d'un FVG/IFVG pour compter — durci
+    pour que le score discrimine au lieu de saturer."""
     is_long = direction == "long"
     with_bias = "bullish" if is_long else "bearish"
     against = "bearish" if is_long else "bullish"
@@ -123,8 +125,8 @@ def _confluences(leg: pd.DataFrame, direction: str,
     lows, highs = leg["low"].values, leg["high"].values
     closes = leg["close"].values
 
-    # FVG non comblé dans la jambe
-    for z in find_fvgs(leg):
+    # FVG non comblé dans la jambe (taille >= min_size)
+    for z in find_fvgs(leg, min_size=min_size):
         if z.direction != with_bias:
             continue
         after = lows[z.index:] if is_long else highs[z.index:]
@@ -133,8 +135,8 @@ def _confluences(leg: pd.DataFrame, direction: str,
             flags["fvg"] = True
             zones.append(("FVG", z))
 
-    # IFVG : FVG opposé traversé en clôture (il s'inverse)
-    for z in find_fvgs(leg):
+    # IFVG : FVG opposé (taille >= min_size) traversé en clôture (il s'inverse)
+    for z in find_fvgs(leg, min_size=min_size):
         if z.direction != against:
             continue
         broken = (closes[z.index:].max() > z.top) if is_long \
@@ -143,11 +145,17 @@ def _confluences(leg: pd.DataFrame, direction: str,
             flags["ifvg"] = True
             zones.append(("IFVG", z))
 
-    # Order Block : dernière bougie opposée avant l'impulsion du BOS
-    obs = [z for z in find_order_blocks(leg, lookback=5) if z.direction == with_bias]
-    if obs:
-        flags["ob"] = True
-        zones.append(("OB", obs[-1]))
+    # Order Block : dernière bougie opposée avant l'impulsion du BOS —
+    # compté seulement s'il n'a pas déjà été violé (clôture au travers)
+    for z in reversed(find_order_blocks(leg, lookback=5)):
+        if z.direction != with_bias:
+            continue
+        violated = (closes[z.index:].min() < z.bottom) if is_long \
+            else (closes[z.index:].max() > z.top)
+        if not violated:
+            flags["ob"] = True
+            zones.append(("OB", z))
+        break  # on ne considère que l'OB le plus récent
 
     # Breaker Block : OB opposé (avant la jambe) traversé par le BOS
     if len(pre_leg) >= 6:
@@ -258,7 +266,10 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
     leg_start = m15.index[m15["time"] >= sweep_open_time][0]
     leg = m15.loc[leg_start:].reset_index(drop=True)
     pre_leg = m15.loc[:leg_start].tail(40).reset_index(drop=True)
-    flags, zones = _confluences(leg, direction, pre_leg)
+    # taille minimale des FVG/IFVG en fraction d'ATR M15 (anti-saturation du score)
+    atr_val = float(atr(m15, 14).iloc[-1] or 0.0)
+    min_size = atr_val * s.get("confluence_min_size_atr", 0.5)
+    flags, zones = _confluences(leg, direction, pre_leg, min_size=min_size)
 
     # --- 5. Entrée : confluence la plus proche du BOS, sinon retest du BOS ---
     prio = {"FVG": 0, "OB": 0, "IFVG": 1, "Breaker": 1}

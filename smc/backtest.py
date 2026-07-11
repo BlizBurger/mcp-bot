@@ -210,15 +210,19 @@ def fetch_data(cfg: dict, pairs: list[str], days: int) -> dict:
                 pip = client.pip_size(pair)
             except Exception:
                 pip = pip_size_fallback(pair, cfg)
-            data[pair] = {
-                "pip": pip,
-                "htf": client.get_rates_range(pair, cfg["timeframes"]["htf"],
-                                              start - timedelta(days=30), end),
-                "ltf": client.get_rates_range(pair, cfg["timeframes"]["ltf"],
-                                              start, end),
-                "d1": client.get_rates_range(pair, "D1",
-                                             start - timedelta(days=200), end),
-            }
+            try:
+                data[pair] = {
+                    "pip": pip,
+                    "htf": client.get_rates_range(pair, cfg["timeframes"]["htf"],
+                                                  start - timedelta(days=30), end),
+                    "ltf": client.get_rates_range(pair, cfg["timeframes"]["ltf"],
+                                                  start, end),
+                    "d1": client.get_rates_range(pair, "D1",
+                                                 start - timedelta(days=200), end),
+                }
+            except Exception as exc:  # noqa: BLE001 — symbole absent chez le broker
+                log.warning("%s ignoré (indisponible chez le broker ?) : %s",
+                            pair, exc)
     finally:
         client.shutdown()
     return data
