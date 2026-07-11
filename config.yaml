@@ -28,6 +28,10 @@ sweep_bos:
   min_score: 0                # ne garder que les setups avec score >= N (0-6)
   confluence_min_size_atr: 0.5   # un FVG/IFVG compte seulement si sa taille
                                  # >= 0.5x l'ATR(14) M15 (anti-saturation du score)
+  entry_zone_kinds: [FVG, OB, IFVG, Breaker]   # types de zones autorisés pour
+                                 # l'entrée (retirer OB pour tester l'hypothèse
+                                 # "les entrées OB perdent") ; le retest du BOS
+                                 # reste toujours le repli
 
 timeframes:
   htf: H4      # biais directionnel

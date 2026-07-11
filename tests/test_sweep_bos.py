@@ -157,3 +157,17 @@ class TestSweepBosSetup:
         setup = get_strategy("sweep_bos")("EURUSD", {"htf": h4, "ltf": m15},
                                           self.cfg(bos_window_m15=3), 0.0001)
         assert setup is None  # BOS à la 7e bougie : hors fenêtre de 3
+
+    def test_entry_zone_kinds_filter(self):
+        h4, m15 = build_scenario()
+        # le scénario entre normalement sur l'OB ; en interdisant les OB,
+        # l'entrée retombe sur le retest du BOS
+        setup_ob = get_strategy("sweep_bos")("EURUSD", {"htf": h4, "ltf": m15},
+                                             self.cfg(), 0.0001)
+        cfg_no_ob = self.cfg(entry_zone_kinds=["FVG", "IFVG", "Breaker"])
+        setup_no_ob = get_strategy("sweep_bos")("EURUSD", {"htf": h4, "ltf": m15},
+                                                cfg_no_ob, 0.0001)
+        assert setup_ob is not None and setup_no_ob is not None
+        assert setup_ob.zone.kind == "OB"
+        assert setup_no_ob.zone.kind == "BOS"   # repli : retest du swing cassé
+        assert setup_no_ob.entry != setup_ob.entry

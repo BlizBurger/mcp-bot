@@ -295,6 +295,23 @@ _VARIANTS: list[tuple[str, dict]] = [
     ("aucun nouveau filtre (base)", dict(_ALL_OFF)),
 ]
 
+# Paires épargnées par la variante "majors + crosses JPY" (hypothèse : les
+# crosses CHF/CAD/AUD ont des spreads trop lourds pour la stratégie)
+_JPY_MAJORS = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD",
+               "NZDUSD", "EURJPY", "GBPJPY", "AUDJPY", "CHFJPY", "EURGBP"}
+
+# Hypothèses issues du rapport 365j/21 paires (sorties, zones, SL, paires)
+_SWEEP_VARIANTS: list[tuple[str, dict, set | None]] = [
+    ("config actuelle", {}, None),
+    ("SL buffer 0.20%", {("sweep_bos", "sl_buffer_pct"): 0.20}, None),
+    ("SL buffer 0.30%", {("sweep_bos", "sl_buffer_pct"): 0.30}, None),
+    ("entrées sans OB", {("sweep_bos", "entry_zone_kinds"):
+                         ["FVG", "IFVG", "Breaker"]}, None),
+    ("sortie au temps à 48h", {("exits", "max_holding_bars"): 192}, None),
+    ("sans breakeven", {("exits", "breakeven_after_r"): 0}, None),
+    ("majors + crosses JPY", {}, _JPY_MAJORS),
+]
+
 
 def run_compare_strategies(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
     """Backtest chaque stratégie (et les paliers de score pour sweep_bos) sur
@@ -332,27 +349,57 @@ def run_compare_strategies(cfg: dict, pairs: list[str], days: int) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
-def run_compare(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
-    """Rejoue la même période avec chaque option retirée une à une.
-    ⚠️ Outil de diagnostic : comparer des variantes sur le même passé reste
-    de l'exploration in-sample — le risque d'overfitting s'applique."""
+def _fmt_seg(s: dict) -> str:
+    if not s.get("trades"):
+        return "0 trades"
+    pf = s["profit_factor"]
+    pf_txt = "∞" if pf == float("inf") else f"{pf:.2f}"
+    return (f"{s['trades']:3d} trades | WR {s['win_rate']*100:4.1f}% | "
+            f"total {s['total_r']:+6.1f} R | PF {pf_txt}")
+
+
+def run_compare(cfg: dict, pairs: list[str], days: int,
+                split: float = 0.0) -> pd.DataFrame:
+    """Rejoue la même période avec des variantes ciblées.
+
+    `split` (ex. 0.75) découpe la période : les variantes sont jugées sur les
+    premiers 75% (in-sample) ET vérifiées sur les derniers 25% jamais utilisés
+    pour choisir (out-of-sample). Une variante qui ne tient que sur
+    l'in-sample est de l'overfitting — à jeter.
+    """
     data = fetch_data(cfg, pairs, days)
+    variants = _SWEEP_VARIANTS if cfg.get("strategy_name") == "sweep_bos" \
+        else [(n, o, None) for n, o in _VARIANTS]
+    cutoff = datetime.now() - timedelta(days=days * (1 - split)) if split else None
+
     rows = []
-    for name, overrides in _VARIANTS:
-        df = simulate_all(_cfg_with(cfg, overrides), data)
-        s = compute_stats(df)
-        rows.append({
-            "variante": name,
-            "trades": s.get("trades", 0),
-            "win_rate_%": round(s["win_rate"] * 100, 1) if s.get("trades") else None,
-            "r_moyen": round(s["avg_r"], 2) if s.get("trades") else None,
-            "total_r": round(s["total_r"], 1) if s.get("trades") else None,
-            "profit_factor": round(s["profit_factor"], 2)
-            if s.get("trades") and s["profit_factor"] != float("inf") else None,
-        })
-        log.info("%-38s : %3d trades | WR %s%% | total %s R | PF %s",
-                 name, rows[-1]["trades"], rows[-1]["win_rate_%"],
-                 rows[-1]["total_r"], rows[-1]["profit_factor"])
+    for name, overrides, pair_filter in variants:
+        subset = {p: d for p, d in data.items()
+                  if pair_filter is None or p in pair_filter}
+        df = simulate_all(_cfg_with(cfg, overrides), subset)
+        if cutoff is not None and not df.empty:
+            df_is = df[df["open_time"] < cutoff]
+            df_oos = df[df["open_time"] >= cutoff]
+            s_is, s_oos = compute_stats(df_is), compute_stats(df_oos)
+            log.info("%-24s | IS : %s || OOS : %s",
+                     name, _fmt_seg(s_is), _fmt_seg(s_oos))
+            rows.append({"variante": name,
+                         "is_trades": s_is.get("trades", 0),
+                         "is_total_r": round(s_is.get("total_r", 0), 1) if s_is.get("trades") else None,
+                         "is_pf": round(s_is["profit_factor"], 2)
+                         if s_is.get("trades") and s_is["profit_factor"] != float("inf") else None,
+                         "oos_trades": s_oos.get("trades", 0),
+                         "oos_total_r": round(s_oos.get("total_r", 0), 1) if s_oos.get("trades") else None,
+                         "oos_pf": round(s_oos["profit_factor"], 2)
+                         if s_oos.get("trades") and s_oos["profit_factor"] != float("inf") else None})
+        else:
+            s = compute_stats(df)
+            log.info("%-24s : %s", name, _fmt_seg(s))
+            rows.append({"variante": name,
+                         "trades": s.get("trades", 0),
+                         "total_r": round(s.get("total_r", 0), 1) if s.get("trades") else None,
+                         "profit_factor": round(s["profit_factor"], 2)
+                         if s.get("trades") and s["profit_factor"] != float("inf") else None})
     return pd.DataFrame(rows)
 
 
@@ -372,6 +419,10 @@ def main() -> None:
     parser.add_argument("--strategy", type=str, default=None,
                         help=f"stratégie à utiliser ({', '.join(STRATEGIES)}) ; "
                              "défaut : strategy_name du config.yaml")
+    parser.add_argument("--split", type=float, default=0.0,
+                        help="fraction in-sample (ex. 0.75) : les stats sont "
+                             "aussi calculées sur la fin de période jamais "
+                             "utilisée pour choisir (out-of-sample)")
     args = parser.parse_args()
     pairs = [p.strip().upper() for p in args.pairs.split(",") if p.strip()]
     if args.strategy:
@@ -389,7 +440,7 @@ def main() -> None:
         return
 
     if args.compare:
-        result = run_compare(cfg, pairs, args.days)
+        result = run_compare(cfg, pairs, args.days, split=args.split)
         out_dir = Path(cfg["paths"]["reports"])
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / f"compare_{datetime.now():%Y%m%d_%H%M%S}.csv"

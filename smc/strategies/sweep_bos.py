@@ -273,8 +273,11 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
 
     # --- 5. Entrée : confluence la plus proche du BOS, sinon retest du BOS ---
     prio = {"FVG": 0, "OB": 0, "IFVG": 1, "Breaker": 1}
+    allowed = set(s.get("entry_zone_kinds", ["FVG", "OB", "IFVG", "Breaker"]))
     usable = []
     for kind, z in zones:
+        if kind not in allowed:
+            continue
         edge = z.top if is_long else z.bottom      # bord proximal (prix au-dessus/en-dessous)
         if (is_long and edge < last_close) or (not is_long and edge > last_close):
             usable.append((prio[kind], abs(edge - bos_level), kind, z, edge))
