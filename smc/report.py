@@ -107,6 +107,83 @@ def _fmt_stats(stats: dict) -> str:
 </div>"""
 
 
+def _summary_section(trades: pd.DataFrame, stats: dict, per_pair: dict,
+                     days: int) -> str:
+    """Résumé et conclusion générés automatiquement depuis les chiffres."""
+    if not stats.get("trades"):
+        return ("<h2>Résumé &amp; conclusion</h2><p>Aucun trade généré sur la "
+                "période : impossible de conclure. Vérifier les filtres ou "
+                "élargir la période.</p>")
+
+    pf = stats["profit_factor"]
+    points: list[str] = []
+
+    # Activité et global
+    points.append(
+        f"<b>{stats['trades']} trades</b> en {days} jours "
+        f"(≈ {stats['trades'] * 30 / days:.1f}/mois) — win rate "
+        f"{stats['win_rate']*100:.1f}%, total <b>{stats['total_r']:+.1f} R</b>, "
+        f"profit factor <b>{'∞' if pf == float('inf') else f'{pf:.2f}'}</b>, "
+        f"drawdown max {stats['max_drawdown_r']:.1f} R.")
+
+    # Meilleure / pire paire
+    scored = {p: s for p, s in per_pair.items() if s.get("trades")}
+    if len(scored) >= 2:
+        best = max(scored, key=lambda p: scored[p]["total_r"])
+        worst = min(scored, key=lambda p: scored[p]["total_r"])
+        points.append(
+            f"Meilleure paire : <b>{best}</b> ({scored[best]['total_r']:+.1f} R "
+            f"sur {scored[best]['trades']} trades) ; pire : <b>{worst}</b> "
+            f"({scored[worst]['total_r']:+.1f} R). Attention : avec ~"
+            f"{stats['trades'] // max(len(scored), 1)} trades/paire, ces écarts "
+            f"peuvent être du bruit.")
+
+    # Sorties
+    if "exit_kind" in trades.columns:
+        by_exit = trades.groupby("exit_kind")["result_r"].agg(["count", "sum"])
+        parts = [f"{k} : {int(v['count'])} trades, {v['sum']:+.1f} R"
+                 for k, v in by_exit.iterrows()]
+        points.append("Répartition par sortie — " + " | ".join(parts) + ".")
+
+    # AMD
+    if "amd" in trades.columns and trades["amd"].any():
+        g = _grp_stats(trades[trades["amd"]])
+        ng = _grp_stats(trades[~trades["amd"]])
+        pf_a = "∞" if g["pf"] == float("inf") else f"{g['pf']:.2f}"
+        pf_n = "∞" if ng["pf"] == float("inf") else f"{ng['pf']:.2f}"
+        points.append(
+            f"Bonus AMD : {g['n']} trades avec pattern (PF {pf_a}, "
+            f"{g['tot']:+.1f} R) contre {ng['n']} sans (PF {pf_n}, "
+            f"{ng['tot']:+.1f} R) — "
+            + ("le pattern AMD semble apporter un plus sur cette période."
+               if g["n"] >= 10 and g["pf"] > ng["pf"] * 1.15 else
+               "pas d'avantage clair du pattern AMD sur cette période."))
+
+    # Verdict
+    if pf >= 1.3:
+        verdict = ("✅ <b>Prometteur sur cette période.</b> MAIS ces réglages ont "
+                   "été choisis en partie sur ces mêmes données : le chiffre est "
+                   "flatté. Validation obligatoire en démo (4+ semaines) avant "
+                   "tout argent réel.")
+    elif pf >= 1.0:
+        verdict = ("➖ <b>Marginal.</b> L'espérance après spread est proche de "
+                   "zéro ; le slippage réel la mangera probablement. Continuer "
+                   "à observer en démo, ne pas engager d'argent réel.")
+    else:
+        verdict = ("❌ <b>Perdant sur cette période.</b> En l'état, cette "
+                   "configuration ne justifie ni challenge payant ni compte "
+                   "réel. Pistes : revoir les hypothèses en démo, analyser les "
+                   "images de trades perdants, ou accepter que l'edge mécanique "
+                   "n'est pas démontré.")
+
+    items = "".join(f"<li>{p}</li>" for p in points)
+    return (f"<h2>Résumé &amp; conclusion</h2><ul>{items}</ul>"
+            f"<p class=\"warn\">{verdict}<br><br>Rappel : backtest sur mèches "
+            f"M15, spread fixe, slippage non modélisé, paramètres en partie "
+            f"ajustés sur le passé — le réel sera probablement moins bon. Le "
+            f"juge de paix reste la démo en avant.</p>")
+
+
 def render_report(trades: pd.DataFrame, stats: dict, per_pair: dict,
                   days: int) -> str:
     warn_items = "".join(f"<li>{w}</li>" for w in WARNINGS)
@@ -187,4 +264,6 @@ grossière, le spread réel varie. Le slippage n'est pas modélisé.</p>
 <th>Clôture</th><th>Entrée</th><th>SL</th><th>TP</th><th>Sortie</th>
 <th>Résultat</th></tr>
 {trades_rows}</table>
+
+{_summary_section(trades, stats, per_pair, days)}
 </body></html>"""
