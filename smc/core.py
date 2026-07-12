@@ -60,6 +60,7 @@ class Setup:
     time: datetime
     entry_is_limit: bool = False   # True : `entry` est un ordre limite suggéré
     score: int = 0                 # score de confluence (stratégies à scoring)
+    amd: bool = False              # pattern AMD confirmé (bonus de score)
     strategy: str = "amd_asian"    # nom de la stratégie qui a produit le setup
     invalidation: float | None = None  # niveau qui invalide le setup s'il clôture au-delà
     comments: list[str] = field(default_factory=list)

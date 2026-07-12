@@ -132,6 +132,10 @@ def render_report(trades: pd.DataFrame, stats: dict, per_pair: dict,
         if "score" in trades.columns and trades["score"].max() > 0:
             breakdowns += _breakdown_table(trades, "score",
                                            "Stats par score de confluence")
+        if "amd" in trades.columns:
+            breakdowns += _breakdown_table(
+                trades, lambda r: "avec AMD" if r["amd"] else "sans AMD",
+                "Stats avec/sans pattern AMD (bonus)")
         equity_html = _equity_svg(trades["result_r"].cumsum().tolist())
         trades_rows = "".join(
             f"<tr><td>{t.pair}</td><td>{t.direction}</td><td>{t.zone_kind}"

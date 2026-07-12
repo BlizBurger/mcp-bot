@@ -174,6 +174,89 @@ def _confluences(leg: pd.DataFrame, direction: str, pre_leg: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# Bonus AMD : accumulation (compression ATR) -> manipulation confirmée
+# ---------------------------------------------------------------------------
+
+def _resample(m15: pd.DataFrame, rule: str) -> pd.DataFrame:
+    return (m15.set_index("time")
+            .resample(rule)
+            .agg({"open": "first", "high": "max", "low": "min",
+                  "close": "last", "tick_volume": "sum"})
+            .dropna().reset_index())
+
+
+def find_amd_pattern(df: pd.DataFrame, side: str, s: dict) -> bool:
+    """AMD complet sur UN timeframe, confirmé récemment (fin du df).
+
+    Accumulation : fenêtre flexible de window_min à window_max bougies dont le
+    range (high-low) <= ATR(14) x amd_atr_mult.
+    Manipulation : mèche au-delà de la borne du range côté `side`, puis
+    clôture de retour à l'intérieur (tolérance : à moins de N% du range
+    au-delà du niveau) dans les amd_rejection_delay_bars bougies — rejet
+    immédiat ou progressif. Candidat expiré après amd_candidate_expiry_bars.
+    """
+    n = len(df)
+    wmin = int(s.get("amd_window_min", 8))
+    wmax = int(s.get("amd_window_max", 25))
+    # il faut au minimum la plus petite fenêtre + le warmup ATR(14) + la
+    # manipulation ; les fenêtres plus grandes que l'historique sont ignorées
+    if n < wmin + 16:
+        return False
+    wmax = min(wmax, n - 16)
+    mult = float(s.get("amd_atr_mult", 0.5))
+    delay = int(s.get("amd_rejection_delay_bars", 10))
+    expiry = int(s.get("amd_candidate_expiry_bars", 35))
+    tol_pct = float(s.get("amd_rejection_tolerance_pct", 10)) / 100.0
+    recent = expiry + delay  # la confirmation doit dater de la fin du df
+
+    atr_vals = atr(df, 14).values
+    hi, lo, cl = df["high"].values, df["low"].values, df["close"].values
+
+    for w in range(wmin, wmax + 1):
+        rng_hi = df["high"].rolling(w).max().values
+        rng_lo = df["low"].rolling(w).min().values
+        for j in range(max(w, 14), n - 2):
+            rng = rng_hi[j] - rng_lo[j]
+            av = atr_vals[j]
+            if not (av and av > 0 and rng <= av * mult):
+                continue
+            acc_h, acc_l, tol = rng_hi[j], rng_lo[j], (rng_hi[j] - rng_lo[j]) * tol_pct
+            # manipulation : premier dépassement après l'accumulation
+            for k in range(j + 1, min(n, j + 1 + expiry)):
+                swept = lo[k] < acc_l if side == "low" else hi[k] > acc_h
+                if not swept:
+                    continue
+                # rejet (immédiat ou progressif) dans le délai
+                for m in range(k, min(n, k + delay + 1)):
+                    inside = cl[m] >= acc_l - tol if side == "low" \
+                        else cl[m] <= acc_h + tol
+                    if inside:
+                        if (n - 1 - m) <= recent:
+                            return True
+                        break  # confirmé mais trop ancien : candidat suivant
+                break  # pas de rejet dans le délai : candidat invalidé
+    return False
+
+
+def amd_bonus_confirmed(m15: pd.DataFrame, h4: pd.DataFrame, side: str,
+                        s: dict) -> bool:
+    """Cherche un AMD confirmé dans la direction du sweep sur les timeframes
+    configurés (4H/1H pour les cycles longs, 30M/15M pour les courts)."""
+    tfs = s.get("amd_timeframes", ["H4", "H1", "M30", "M15"])
+    frames = []
+    if "H4" in tfs:
+        frames.append(h4.tail(80))
+    if "H1" in tfs:
+        frames.append(_resample(m15, "1h").tail(100))
+    if "M30" in tfs:
+        frames.append(_resample(m15, "30min").tail(120))
+    if "M15" in tfs:
+        frames.append(m15.tail(150))
+    return any(find_amd_pattern(f.reset_index(drop=True), side, s)
+               for f in frames)
+
+
+# ---------------------------------------------------------------------------
 # Détection principale
 # ---------------------------------------------------------------------------
 
@@ -299,6 +382,11 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
         flags["ote"] = 0.618 <= retr <= 0.79
     else:
         flags["equilibrium"] = flags["ote"] = False
+
+    # Bonus AMD : +1 point si accumulation -> manipulation confirmée dans la
+    # direction du sweep, juste avant. Jamais bloquant (règle n°5 de la spec).
+    if s.get("amd_enabled", False):
+        flags["amd"] = amd_bonus_confirmed(m15, h4_done, sweep.side, s)
     score = sum(1 for v in flags.values() if v)
     if score < s.get("min_score", 0):
         return None
@@ -323,12 +411,15 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
     rr = abs(tp - entry) / risk
 
     active = [name for name, v in flags.items() if v]
+    max_score = 7 if s.get("amd_enabled", False) else 6
     return Setup(
         pair=pair, direction=direction, zone=zone, sweep=sweep,
         entry=float(entry), sl=float(sl_price), tp=float(tp),
         rr=round(rr, 2), time=now, entry_is_limit=True,  # toujours un ordre limite (zone ou retest)
         score=score, strategy="sweep_bos", invalidation=sweep.level,
+        amd=flags.get("amd", False),
         comments=[f"sweep H4 {sweep.side} @{sweep.level:.5f} (rejet mèche)",
                   f"BOS M15 @{bos_level:.5f}",
                   f"entrée: {entry_kind}",
-                  f"score {score}/6 ({', '.join(active) if active else 'aucune confluence'})"])
+                  f"score {score}/{max_score} "
+                  f"({', '.join(active) if active else 'aucune confluence'})"])

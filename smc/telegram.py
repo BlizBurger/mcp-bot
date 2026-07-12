@@ -67,7 +67,8 @@ def format_setup(setup: Setup, exits_cfg: dict | None = None) -> str:
         if mh > 0:
             plan_lines.append(f"→ couper au marché si ni TP ni SL après ~{mh} bougies M15")
     plan = ("\nPlan de gestion :\n" + "\n".join(plan_lines) + "\n") if plan_lines else ""
-    score_line = f"Score de confluence : {setup.score}/6\n" if setup.score else ""
+    score_line = (f"Score de confluence : {setup.score}"
+                  f"{' (dont bonus AMD ✔)' if setup.amd else ''}\n") if setup.score else ""
     return (
         f"<b>{arrow} {setup.pair}</b> — setup détecté ({setup.strategy})\n"
         f"{score_line}"

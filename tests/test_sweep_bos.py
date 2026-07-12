@@ -213,3 +213,72 @@ class TestPartialTake:
         assert t["exit_kind"] == "breakeven"
         # moitié encaissée à +1R, moitié rendue à breakeven => ~ +0.5R
         assert t["result_r"] == pytest.approx(0.5, abs=0.05)
+
+
+class TestAmdBonus:
+    """Détecteur AMD : accumulation (compression ATR) -> manipulation avec
+    rejet confirmé."""
+
+    @staticmethod
+    def amd_df(rejection=True, side="low"):
+        """20 bougies volatiles (ATR large), 12 bougies d'accumulation serrée
+        1.0000-1.0004, puis manipulation sous/au-dessus du range."""
+        import pandas as pd
+        from datetime import datetime
+        rows = []
+        # phase volatile : ranges de 40 pips (gonfle l'ATR)
+        for i in range(20):
+            base = 1.0000 + (0.0040 if i % 2 == 0 else -0.0040)
+            rows.append((base, base + 0.0020, base - 0.0020, 1.0000))
+        # accumulation : 12 bougies dans 4 pips
+        for i in range(12):
+            rows.append((1.0001, 1.0004, 1.0000, 1.0002))
+        if side == "low":
+            if rejection:
+                # mèche sous 1.0000, clôture revenue dans le range
+                rows.append((1.0001, 1.0003, 0.9988, 1.0002))
+            else:
+                # cassure franche sans rejet : clôtures sous le range
+                rows.append((1.0001, 1.0002, 0.9985, 0.9987))
+                for i in range(12):
+                    rows.append((0.9987, 0.9989, 0.9980, 0.9984))
+        else:
+            rows.append((1.0003, 1.0016, 1.0001, 1.0002))
+        base_t = datetime(2026, 7, 6, 0, 0)
+        return pd.DataFrame([
+            {"time": base_t + pd.Timedelta(minutes=15 * i), "open": o,
+             "high": h, "low": l, "close": c, "tick_volume": 100}
+            for i, (o, h, l, c) in enumerate(rows)])
+
+    CFG_AMD = {"amd_atr_mult": 0.5, "amd_window_min": 8, "amd_window_max": 25,
+               "amd_rejection_delay_bars": 10,
+               "amd_rejection_tolerance_pct": 10,
+               "amd_candidate_expiry_bars": 35}
+
+    def test_amd_low_sweep_confirmed(self):
+        from smc.strategies.sweep_bos import find_amd_pattern
+        assert find_amd_pattern(self.amd_df(rejection=True, side="low"),
+                                "low", self.CFG_AMD) is True
+
+    def test_amd_wrong_side(self):
+        from smc.strategies.sweep_bos import find_amd_pattern
+        assert find_amd_pattern(self.amd_df(rejection=True, side="low"),
+                                "high", self.CFG_AMD) is False
+
+    def test_amd_high_sweep_confirmed(self):
+        from smc.strategies.sweep_bos import find_amd_pattern
+        assert find_amd_pattern(self.amd_df(rejection=True, side="high"),
+                                "high", self.CFG_AMD) is True
+
+    def test_amd_no_rejection_invalidated(self):
+        from smc.strategies.sweep_bos import find_amd_pattern
+        assert find_amd_pattern(self.amd_df(rejection=False, side="low"),
+                                "low", self.CFG_AMD) is False
+
+    def test_amd_never_blocks_setup(self):
+        # règle n°5 : AMD absent => le setup sweep+BOS reste valide
+        h4, m15 = build_scenario()
+        cfg = TestSweepBosSetup().cfg(amd_enabled=True)
+        setup = get_strategy("sweep_bos")("EURUSD", {"htf": h4, "ltf": m15},
+                                          cfg, 0.0001)
+        assert setup is not None  # avec ou sans bonus, jamais bloqué

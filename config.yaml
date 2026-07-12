@@ -32,6 +32,17 @@ sweep_bos:
   entry_zone_kinds: [FVG, IFVG, Breaker]   # OB retiré après le test IS/OOS
                                  # (les entrées OB perdaient sur les deux
                                  # segments) ; le retest du BOS reste le repli
+  # --- Bonus AMD : accumulation (compression ATR) -> manipulation confirmée
+  # juste avant le sweep. +1 point de score si la direction correspond.
+  # JAMAIS bloquant : aucun trade sweep+BOS n'attend ni n'exige l'AMD.
+  amd_enabled: true
+  amd_atr_mult: 0.5              # compression : range <= ATR(14) x mult (tester 0.4-0.7)
+  amd_window_min: 8              # fenêtre d'accumulation flexible (bougies)
+  amd_window_max: 25
+  amd_rejection_delay_bars: 10   # délai max du rejet après le dépassement (8-15)
+  amd_rejection_tolerance_pct: 10  # clôture tolérée à N% du range au-delà du niveau
+  amd_candidate_expiry_bars: 35  # candidat expiré sans progression (30-40)
+  amd_timeframes: [H4, H1, M30, M15]  # H1/M30 rééchantillonnés depuis le M15
 
 timeframes:
   htf: H4      # biais directionnel
