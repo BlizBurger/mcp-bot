@@ -107,10 +107,14 @@ def build_scenario():
 
 class TestSweepBosSetup:
     def cfg(self, **overrides):
+        # fixe explicitement les réglages dont les scénarios dépendent, pour
+        # que les tests ne cassent pas quand les défauts de config.yaml évoluent
         cfg = load_config()
         cfg["strategy_name"] = "sweep_bos"
         cfg["sweep_bos"] = {**cfg["sweep_bos"], "min_sweep_pips": 1.0,
-                            "min_score": 0, **overrides}
+                            "min_score": 0,
+                            "entry_zone_kinds": ["FVG", "OB", "IFVG", "Breaker"],
+                            **overrides}
         cfg["calendar"] = {"skip_dates": [], "skip_friday_after": ""}
         cfg["strategy"]["min_risk_pips"] = 0.0
         return cfg
