@@ -282,3 +282,14 @@ class TestAmdBonus:
         setup = get_strategy("sweep_bos")("EURUSD", {"htf": h4, "ltf": m15},
                                           cfg, 0.0001)
         assert setup is not None  # avec ou sans bonus, jamais bloqué
+
+    def test_amd_level_calibration(self):
+        from smc.strategies.sweep_bos import amd_bonus_level
+        h4, _ = build_scenario()
+        m15 = self.amd_df(rejection=True, side="low")
+        cfg = {**self.CFG_AMD, "amd_timeframes": ["M15"]}
+        level = amd_bonus_level(m15, h4, "low", cfg)
+        assert level > 0          # un pattern existe à un des niveaux
+        assert level in (0.5, 1.0, 1.5, 2.0, 3.0)
+        # côté opposé : aucun niveau ne confirme
+        assert amd_bonus_level(m15, h4, "high", cfg) == 0.0

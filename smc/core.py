@@ -61,6 +61,8 @@ class Setup:
     entry_is_limit: bool = False   # True : `entry` est un ordre limite suggéré
     score: int = 0                 # score de confluence (stratégies à scoring)
     amd: bool = False              # pattern AMD confirmé (bonus de score)
+    amd_level: float = 0.0         # compression la plus stricte où l'AMD se
+                                   # confirme (x ATR ; 0 = aucun pattern)
     strategy: str = "amd_asian"    # nom de la stratégie qui a produit le setup
     invalidation: float | None = None  # niveau qui invalide le setup s'il clôture au-delà
     comments: list[str] = field(default_factory=list)

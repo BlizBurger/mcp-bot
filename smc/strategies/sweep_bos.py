@@ -238,22 +238,32 @@ def find_amd_pattern(df: pd.DataFrame, side: str, s: dict) -> bool:
     return False
 
 
-def amd_bonus_confirmed(m15: pd.DataFrame, h4: pd.DataFrame, side: str,
-                        s: dict) -> bool:
-    """Cherche un AMD confirmé dans la direction du sweep sur les timeframes
-    configurés (4H/1H pour les cycles longs, 30M/15M pour les courts)."""
+# Niveaux de compression testés pour la calibration (x ATR). Le rapport
+# ventile les trades par niveau : c'est lui qui dira quel multiplicateur
+# sépare les bons setups (section 6 de la spec : "à calibrer par backtest").
+AMD_LEVELS = [0.5, 1.0, 1.5, 2.0, 3.0]
+
+
+def amd_bonus_level(m15: pd.DataFrame, h4: pd.DataFrame, side: str,
+                    s: dict) -> float:
+    """Niveau de compression le plus STRICT auquel un AMD se confirme dans la
+    direction du sweep, sur les timeframes configurés. 0.0 = aucun pattern,
+    même au niveau le plus permissif."""
     tfs = s.get("amd_timeframes", ["H4", "H1", "M30", "M15"])
     frames = []
     if "H4" in tfs:
-        frames.append(h4.tail(80))
+        frames.append(h4.tail(80).reset_index(drop=True))
     if "H1" in tfs:
         frames.append(_resample(m15, "1h").tail(100))
     if "M30" in tfs:
         frames.append(_resample(m15, "30min").tail(120))
     if "M15" in tfs:
-        frames.append(m15.tail(150))
-    return any(find_amd_pattern(f.reset_index(drop=True), side, s)
-               for f in frames)
+        frames.append(m15.tail(150).reset_index(drop=True))
+    for mult in AMD_LEVELS:
+        s_mult = {**s, "amd_atr_mult": mult}
+        if any(find_amd_pattern(f, side, s_mult) for f in frames):
+            return mult
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -385,8 +395,12 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
 
     # Bonus AMD : +1 point si accumulation -> manipulation confirmée dans la
     # direction du sweep, juste avant. Jamais bloquant (règle n°5 de la spec).
+    # Le niveau de compression détecté est stocké pour la calibration.
+    amd_level = 0.0
     if s.get("amd_enabled", False):
-        flags["amd"] = amd_bonus_confirmed(m15, h4_done, sweep.side, s)
+        amd_level = amd_bonus_level(m15, h4_done, sweep.side, s)
+        flags["amd"] = bool(amd_level and
+                            amd_level <= s.get("amd_atr_mult", 0.5))
     score = sum(1 for v in flags.values() if v)
     if score < s.get("min_score", 0):
         return None
@@ -417,7 +431,7 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
         entry=float(entry), sl=float(sl_price), tp=float(tp),
         rr=round(rr, 2), time=now, entry_is_limit=True,  # toujours un ordre limite (zone ou retest)
         score=score, strategy="sweep_bos", invalidation=sweep.level,
-        amd=flags.get("amd", False),
+        amd=flags.get("amd", False), amd_level=amd_level,
         comments=[f"sweep H4 {sweep.side} @{sweep.level:.5f} (rejet mèche)",
                   f"BOS M15 @{bos_level:.5f}",
                   f"entrée: {entry_kind}",

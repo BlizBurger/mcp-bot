@@ -51,6 +51,7 @@ class Trade:
     score: int        # score de confluence du setup (0 si stratégie sans scoring)
     strategy: str     # stratégie qui a produit le trade
     amd: bool         # pattern AMD confirmé au moment du setup (bonus)
+    amd_level: float  # compression la plus stricte où l'AMD se confirme (0 = aucun)
 
 
 def _session_of(ts: datetime, cfg: dict) -> str:
@@ -185,7 +186,7 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
                             session=_session_of(open_time, cfg),
                             exit_kind=exit_kind,
                             score=setup.score, strategy=setup.strategy,
-                            amd=setup.amd))
+                            amd=setup.amd, amd_level=setup.amd_level))
         if daily_trades is not None:
             daily_trades[open_time.date()] = daily_trades.get(open_time.date(), 0) + 1
         open_until = close_time
