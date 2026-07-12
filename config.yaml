@@ -3,12 +3,12 @@
 # Les secrets (Telegram, identifiants MT5) vont dans .env, pas ici.
 # =========================================================================
 
-# Univers élargi : majors + crosses (une paire absente chez le broker est
-# ignorée avec un warning, sans faire échouer le scan/backtest)
+# Univers retenu après le test in-sample/out-of-sample du 2026-07-12 :
+# majors + crosses JPY + EURGBP. Les crosses CHF/CAD/AUD (spreads lourds)
+# perdaient sur les deux segments — écartés. Une paire absente chez le
+# broker est ignorée avec un warning.
 pairs: [EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD,
-        EURJPY, GBPJPY, AUDJPY, NZDJPY, CADJPY, CHFJPY,
-        EURGBP, EURCHF, EURAUD, EURCAD,
-        GBPCHF, GBPAUD, AUDCHF, AUDCAD]
+        EURJPY, GBPJPY, AUDJPY, CHFJPY, EURGBP]
 
 # Stratégie active : amd_asian (v1) ou sweep_bos (v2)
 strategy_name: sweep_bos
@@ -23,15 +23,15 @@ sweep_bos:
   min_wick_ratio: 0.6         # mèche de rejet >= 60% du range de la bougie
   bos_window_m15: 20          # fenêtre max (bougies M15) pour le BOS, sinon expiré
   bos_swing_k: 2              # pivot M15 : 2 bougies de chaque côté
-  sl_buffer_pct: 0.12         # buffer SL en % du prix (0.10-0.15)
+  sl_buffer_pct: 0.20         # buffer SL en % du prix — élargi après le test
+                              # IS/OOS (0.12 se faisait chasser par les mèches)
   min_rr: 2.0                 # R:R minimum ; TP = liquidité opposée si >= min_rr
   min_score: 0                # ne garder que les setups avec score >= N (0-6)
   confluence_min_size_atr: 0.5   # un FVG/IFVG compte seulement si sa taille
                                  # >= 0.5x l'ATR(14) M15 (anti-saturation du score)
-  entry_zone_kinds: [FVG, OB, IFVG, Breaker]   # types de zones autorisés pour
-                                 # l'entrée (retirer OB pour tester l'hypothèse
-                                 # "les entrées OB perdent") ; le retest du BOS
-                                 # reste toujours le repli
+  entry_zone_kinds: [FVG, IFVG, Breaker]   # OB retiré après le test IS/OOS
+                                 # (les entrées OB perdaient sur les deux
+                                 # segments) ; le retest du BOS reste le repli
 
 timeframes:
   htf: H4      # biais directionnel
