@@ -96,6 +96,17 @@ exits:
                               # LTF (96 x M15 ≈ 1 jour ; 192 ≈ 2 jours ;
                               # 0 = désactivé)
 
+# Heures de marché forex (en HEURE SERVEUR MT5). Le forex ne ferme qu'une
+# fois par semaine (vendredi soir) — pas de "fermeture Tokyo/NY" par paire.
+market_hours:
+  week_close_friday: "23:55"        # clôture hebdo du broker (vendredi, heure serveur)
+  force_close_minutes_before: 30    # clôture forcée des positions avant la clôture
+                                    # hebdo (backtest : simulée ; live : rappel Telegram)
+  week_open_blackout_minutes: 60    # aucune entrée dans l'heure suivant l'ouverture
+                                    # hebdo (lundi 00:00 serveur)
+  rollover_blackout: "23:00-00:15"  # aucune entrée pendant le rollover quotidien
+                                    # (spreads erratiques ; "" = désactivé)
+
 calendar:
   skip_friday_after: "12:00"  # aucun nouveau setup le vendredi après cette
                               # heure SERVEUR ("" = désactivé)

@@ -80,6 +80,12 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
     max_bars = int(exits.get("max_holding_bars", 0) or 0)
     partial_r = float(exits.get("partial_at_r", 0) or 0)
     partial_frac = float(exits.get("partial_fraction", 0.5))
+    # Clôture forcée avant la fermeture hebdo (vendredi soir, heure serveur)
+    mh = cfg.get("market_hours", {}) or {}
+    force_close_min = None
+    if mh.get("week_close_friday") and mh.get("force_close_minutes_before"):
+        h, m = map(int, str(mh["week_close_friday"]).split(":"))
+        force_close_min = h * 60 + m - int(mh["force_close_minutes_before"])
     tail = cfg["scanner"]["history_bars_ltf"]
     open_until: datetime | None = None  # pas de nouveau signal tant qu'un trade est ouvert
 
@@ -163,6 +169,16 @@ def simulate_pair(pair: str, htf: pd.DataFrame, ltf: pd.DataFrame,
                     else bar["low"] <= entry - be_r * risk
                 if reached:
                     cur_sl = max(cur_sl, entry) if is_long else min(cur_sl, entry)
+            # Clôture forcée avant la fermeture hebdo : gagnant ou perdant,
+            # on ne garde jamais une position pendant le week-end
+            if force_close_min is not None and bar["time"].weekday() == 4 and \
+                    (bar["time"].hour * 60 + bar["time"].minute) >= force_close_min:
+                exit_price, close_time = float(bar["close"]), bar["time"]
+                unit = (exit_price - entry) / risk if is_long \
+                    else (entry - exit_price) / risk
+                result_r = realized + remaining * unit
+                exit_kind = "week_close"
+                break
             if max_bars and (j - fill_idx) >= max_bars:  # sortie au temps
                 exit_price, close_time = float(bar["close"]), bar["time"]
                 unit = (exit_price - entry) / risk if is_long \

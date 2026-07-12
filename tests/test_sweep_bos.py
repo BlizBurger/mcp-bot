@@ -293,3 +293,45 @@ class TestAmdBonus:
         assert level in (0.5, 1.0, 1.5, 2.0, 3.0)
         # côté opposé : aucun niveau ne confirme
         assert amd_bonus_level(m15, h4, "high", cfg) == 0.0
+
+
+class TestWeekendForceClose:
+    """Clôture forcée du vendredi soir : la position ouverte est coupée au
+    marché ~30 min avant la clôture hebdo, gagnante ou perdante."""
+
+    def test_force_close_friday_evening(self):
+        from smc.backtest import simulate_all
+
+        h4, m15 = build_scenario()
+        # décaler le scénario d'un jour en arrière : le setup se produit le
+        # vendredi matin (2026-07-03), la position court vers le soir
+        h4 = h4.copy(); m15 = m15.copy()
+        h4["time"] -= pd.Timedelta(days=1)
+        m15["time"] -= pd.Timedelta(days=1)
+
+        cfg = TestSweepBosSetup().cfg()
+        cfg["scanner"] = {"history_bars_ltf": 300, "history_bars_htf": 120,
+                          "history_bars_d1": 60}
+        cfg["backtest"] = {"max_trades_per_day": 1, "zone_fill_timeout_bars": 16,
+                           "spread_pips": {"default": 0.0}}
+        cfg["exits"] = {"breakeven_after_r": 0, "max_holding_bars": 0,
+                        "partial_at_r": 0}
+        cfg["market_hours"] = {"week_close_friday": "23:55",
+                               "force_close_minutes_before": 30,
+                               "week_open_blackout_minutes": 60,
+                               "rollover_blackout": ""}
+
+        # remplissage immédiat puis prix plat jusqu'au vendredi soir
+        last_t = m15["time"].iloc[-1]   # vendredi ~05:30
+        rows = [{"time": last_t + pd.Timedelta(minutes=15 * k), "open": 1.0043,
+                 "high": 1.0047, "low": 1.0040, "close": 1.0043,
+                 "tick_volume": 100} for k in range(1, 76)]  # jusqu'à ~00:15 samedi
+        m15x = pd.concat([m15, pd.DataFrame(rows)], ignore_index=True)
+
+        df = simulate_all(cfg, {"EURUSD": {"pip": 0.0001, "htf": h4,
+                                           "ltf": m15x, "d1": None}})
+        assert not df.empty
+        t = df.iloc[0]
+        assert t["exit_kind"] == "week_close"
+        assert t["close_time"].weekday() == 4          # un vendredi
+        assert (t["close_time"].hour, t["close_time"].minute) >= (23, 25)

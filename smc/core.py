@@ -336,6 +336,21 @@ def is_rejection_candle(candle: pd.Series, direction: str) -> bool:
                 (candle["high"] - candle["close"]) / rng >= 0.5)
 
 
+def market_entry_blocked(now: datetime, mh_cfg: Optional[dict]) -> Optional[str]:
+    """Blocage des NOUVELLES entrées lié aux heures de marché forex :
+    blackout après l'ouverture hebdo (lundi 00:00 serveur) et pendant le
+    rollover quotidien. Ne concerne pas les positions déjà ouvertes."""
+    if not mh_cfg:
+        return None
+    ob = int(mh_cfg.get("week_open_blackout_minutes", 0) or 0)
+    if ob and now.weekday() == 0 and (now.hour * 60 + now.minute) < ob:
+        return "blackout ouverture hebdomadaire"
+    win = mh_cfg.get("rollover_blackout") or ""
+    if win and in_window(now, win):
+        return "rollover quotidien"
+    return None
+
+
 def calendar_blocked(now: datetime, cal_cfg: Optional[dict]) -> Optional[str]:
     """Raison du blocage calendrier (jours morts, vendredi après-midi), ou
     None si rien ne bloque."""
@@ -400,8 +415,10 @@ def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
         return None
     now = now or ltf_df["time"].iloc[-1]
 
-    # Filtre calendrier : jours morts / vendredi après-midi
-    if calendar_blocked(now, cfg.get("calendar")):
+    # Filtres calendrier + heures de marché (jours morts, vendredi après-midi,
+    # ouverture hebdo, rollover)
+    if calendar_blocked(now, cfg.get("calendar")) or \
+            market_entry_blocked(now, cfg.get("market_hours")):
         return None
 
     bias = htf_bias(htf_df, k=s.get("swing_k", 2))

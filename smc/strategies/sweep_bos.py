@@ -27,7 +27,7 @@ from typing import Optional
 import pandas as pd
 
 from smc.core import Setup, Sweep, Zone, atr, calendar_blocked, find_fvgs, \
-    find_order_blocks, in_window, swing_points
+    find_order_blocks, in_window, market_entry_blocked, swing_points
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +280,8 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
     if len(h4) < 30 or len(m15) < 60:
         return None
     now = now or m15["time"].iloc[-1]
-    if calendar_blocked(now, cfg.get("calendar")):
+    if calendar_blocked(now, cfg.get("calendar")) or \
+            market_entry_blocked(now, cfg.get("market_hours")):
         return None
 
     window = s.get("bos_window_m15", 20)

@@ -554,3 +554,39 @@ class TestRealConfig:
         # ne doit pas lever d'exception, peu importe le résultat
         find_amd_setup("EURUSD", t.bullish_htf(), t.ltf_amd_day(), cfg,
                        pip_size=0.0001, d1_df=t.bullish_htf())
+
+
+# ---------------------------------------------------------------------------
+# Heures de marché forex : blackout ouverture hebdo + rollover
+# ---------------------------------------------------------------------------
+
+from smc.core import market_entry_blocked  # noqa: E402
+
+
+class TestMarketHours:
+    CFG = {"week_close_friday": "23:55", "force_close_minutes_before": 30,
+           "week_open_blackout_minutes": 60, "rollover_blackout": "23:00-00:15"}
+
+    def test_monday_open_blackout(self):
+        # lundi 00:30 (heure serveur) : dans l'heure suivant l'ouverture hebdo
+        monday_0030 = datetime(2026, 7, 6, 0, 30)
+        assert market_entry_blocked(monday_0030, self.CFG) is not None
+        # lundi 01:30 : blackout levé
+        assert market_entry_blocked(monday_0030.replace(hour=1), self.CFG) is None
+
+    def test_rollover_blackout(self):
+        # mercredi 23:30 : rollover quotidien
+        wed_2330 = datetime(2026, 7, 8, 23, 30)
+        assert market_entry_blocked(wed_2330, self.CFG) is not None
+        # mercredi 22:30 : ok
+        assert market_entry_blocked(wed_2330.replace(hour=22), self.CFG) is None
+        # jeudi 00:10 : encore dans la fenêtre (à cheval sur minuit)
+        thu_0010 = datetime(2026, 7, 9, 0, 10)
+        assert market_entry_blocked(thu_0010, self.CFG) is not None
+
+    def test_disabled(self):
+        monday_0030 = datetime(2026, 7, 6, 0, 30)
+        assert market_entry_blocked(monday_0030, None) is None
+        assert market_entry_blocked(
+            monday_0030, {"week_open_blackout_minutes": 0,
+                          "rollover_blackout": ""}) is None

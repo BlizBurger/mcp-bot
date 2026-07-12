@@ -44,6 +44,31 @@ def write_status(path: str, **fields) -> None:
         log.warning("Impossible d'écrire le fichier de statut : %s", exc)
 
 
+_weekend_reminder_date = None  # dernier jour où le rappel week-end a été envoyé
+
+
+def maybe_weekend_close_reminder(cfg: dict, env: dict, server_now) -> None:
+    """Le vendredi, ~30 min avant la clôture hebdo : rappel Telegram de fermer
+    toute position ouverte (le bot n'exécute jamais d'ordre lui-même)."""
+    global _weekend_reminder_date
+    mh = cfg.get("market_hours", {}) or {}
+    wc, fc = mh.get("week_close_friday"), mh.get("force_close_minutes_before")
+    if not wc or not fc or server_now.weekday() != 4:
+        return
+    h, m = map(int, str(wc).split(":"))
+    threshold = h * 60 + m - int(fc) - 10  # petite marge d'avance
+    if (server_now.hour * 60 + server_now.minute) >= threshold and \
+            _weekend_reminder_date != server_now.date():
+        sent = send_message(
+            env["telegram_token"], env["telegram_chat_id"],
+            "⏰ <b>RAPPEL WEEK-END</b> : clôture du marché dans ~30-40 min "
+            "(heure serveur). Ferme toute position encore ouverte — règle : "
+            "aucune position gardée pendant le week-end, gagnante ou perdante.")
+        if sent:
+            _weekend_reminder_date = server_now.date()
+            log.info("Rappel de clôture week-end envoyé")
+
+
 def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
     """Un cycle complet de scan. Retourne les paires alertées."""
     pairs = cfg["pairs"]
@@ -67,6 +92,12 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
             }
         except MT5Error as exc:
             log.error("Données indisponibles pour %s : %s", pair, exc)
+
+    # Rappel week-end basé sur l'heure SERVEUR (dernière bougie M15 reçue)
+    for d in data.values():
+        if d.get("ltf") is not None and len(d["ltf"]):
+            maybe_weekend_close_reminder(cfg, env, d["ltf"]["time"].iloc[-1])
+            break
 
     for pair, d in data.items():
         try:
