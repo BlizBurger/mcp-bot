@@ -22,7 +22,7 @@ from pathlib import Path
 
 from smc import WARNINGS
 from smc.config import load_config, load_env
-from smc.core import correlation, htf_bias, news_blackout
+from smc.core import correlation, htf_bias, news_blackout, position_size
 from smc.strategies import get_strategy
 from smc.db import alerts_sent_today, connect, insert_setup, setup_already_stored
 from smc.logging_setup import log_warnings_banner, setup_logging
@@ -140,13 +140,28 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
             if setup_already_stored(conn, pair, now.date()):
                 continue
 
+            # Taille de position (via MT5, précise au broker) pour l'alerte
+            sizing = None
+            try:
+                acc = cfg.get("account", {})
+                pvl = client.pip_value_per_lot(pair, pip)
+                specs = client.volume_specs(pair)
+                sizing = position_size(
+                    acc.get("balance", 10000), acc.get("risk_pct", 1.0),
+                    setup.entry, setup.sl, pip, pvl, **specs)
+                if sizing:
+                    sizing["currency"] = acc.get("currency", "")
+                    sizing["risk_pct"] = acc.get("risk_pct", 1.0)
+            except Exception as exc:  # noqa: BLE001 — l'alerte part même sans sizing
+                log.warning("Taille de position non calculée pour %s : %s", pair, exc)
+
             # Règle 1 trade/jour : seul le 1er setup du jour part sur Telegram,
             # les suivants sont stockés en base (alerted=0) pour analyse.
             can_alert = alerts_sent_today(conn) < cfg["scanner"]["max_telegram_alerts_per_day"]
             sent = False
             if can_alert:
                 sent = send_message(env["telegram_token"], env["telegram_chat_id"],
-                                    format_setup(setup, cfg.get("exits")))
+                                    format_setup(setup, cfg.get("exits"), sizing))
             insert_setup(conn, setup, alerted=sent)
             log.info("SETUP %s %s : entrée %.5f SL %.5f TP %.5f — %s",
                      pair, setup.direction, setup.entry, setup.sl, setup.tp,

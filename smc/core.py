@@ -65,6 +65,8 @@ class Setup:
                                    # confirme (x ATR ; 0 = aucun pattern)
     strategy: str = "amd_asian"    # nom de la stratégie qui a produit le setup
     invalidation: float | None = None  # niveau qui invalide le setup s'il clôture au-delà
+    max_score: int = 6             # score maximum atteignable (pour l'affichage)
+    confluences: list[str] = field(default_factory=list)  # labels des confluences actives
     comments: list[str] = field(default_factory=list)
 
 
@@ -525,3 +527,42 @@ def find_amd_setup(pair: str, htf_df: pd.DataFrame, ltf_df: pd.DataFrame,
                  comments=[f"biais H4 {bias}",
                            f"sweep {sweep.side} @{sweep.level:.5f} ({sweep.level_kind})",
                            f"zone {zone.kind} [{zone.bottom:.5f} ; {zone.top:.5f}]"])
+
+
+# ---------------------------------------------------------------------------
+# Taille de position (affichage dans l'alerte — le bot n'exécute jamais)
+# ---------------------------------------------------------------------------
+
+import math  # noqa: E402
+
+# Labels lisibles des confluences pour l'alerte
+CONFLUENCE_LABELS = {
+    "fvg": "FVG", "ifvg": "IFVG", "ob": "OB", "breaker": "Breaker",
+    "equilibrium": "Équilibre", "ote": "Fib OTE", "amd": "AMD",
+}
+
+
+def position_size(balance: float, risk_pct: float, entry: float, sl: float,
+                  pip: float, pip_value_per_lot: float,
+                  volume_step: float = 0.01, volume_min: float = 0.01,
+                  volume_max: float = 100.0) -> Optional[dict]:
+    """Taille de position pour risquer `risk_pct`% du solde.
+
+    `pip_value_per_lot` = valeur d'un pip pour 1.0 lot, dans la devise du
+    compte (fournie par MT5 en live). Retourne None si le calcul est
+    impossible (stop nul, valeur de pip inconnue).
+    """
+    risk_amount = balance * risk_pct / 100.0
+    stop_pips = abs(entry - sl) / pip
+    if stop_pips <= 0 or pip_value_per_lot <= 0:
+        return None
+    risk_per_lot = stop_pips * pip_value_per_lot
+    raw_lots = risk_amount / risk_per_lot
+    # arrondi au pas de volume INFÉRIEUR (ne jamais dépasser le risque visé) ;
+    # +1e-9 pour absorber les erreurs binaires (0.2/0.01 = 19.999...)
+    lots = math.floor(raw_lots / volume_step + 1e-9) * volume_step
+    lots = max(volume_min, min(lots, volume_max))
+    # risque réel après arrondi du lot
+    real_risk = lots * risk_per_lot
+    return {"lots": round(lots, 2), "risk_amount": round(real_risk, 2),
+            "stop_pips": round(stop_pips, 1)}

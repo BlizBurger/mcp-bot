@@ -126,6 +126,13 @@ scanner:
   max_telegram_alerts_per_day: 1   # règle FTMO : 1 trade/jour — les setups
                                    # suivants sont stockés en base mais non alertés
 
+# Compte — sert UNIQUEMENT à calculer la taille de position affichée dans
+# l'alerte. Le bot n'exécute jamais l'ordre : tu passes la position à la main.
+account:
+  balance: 10000              # solde du compte
+  currency: "EUR"             # devise du compte (affichage)
+  risk_pct: 1.0               # % du solde risqué par trade
+
 news:
   file: news_today.txt
   blackout_minutes: 30        # avant/après toute news High impact

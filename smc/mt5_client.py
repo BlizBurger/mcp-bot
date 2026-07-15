@@ -137,3 +137,20 @@ class MT5Client:
         if info is None:
             raise MT5Error(f"symbol_info({symbol}) introuvable")
         return info.point * 10 if info.digits in (3, 5) else info.point
+
+    def pip_value_per_lot(self, symbol: str, pip: float) -> float:
+        """Valeur d'un pip pour 1.0 lot, dans la DEVISE DU COMPTE (calculée par
+        le broker via trade_tick_value / trade_tick_size)."""
+        info = self.mt5.symbol_info(symbol)
+        if info is None or not getattr(info, "trade_tick_size", 0):
+            raise MT5Error(f"valeur de pip indisponible pour {symbol}")
+        return info.trade_tick_value * (pip / info.trade_tick_size)
+
+    def volume_specs(self, symbol: str) -> dict:
+        """Pas / min / max de volume du broker pour arrondir le lot."""
+        info = self.mt5.symbol_info(symbol)
+        if info is None:
+            raise MT5Error(f"symbol_info({symbol}) introuvable")
+        return {"volume_step": info.volume_step or 0.01,
+                "volume_min": info.volume_min or 0.01,
+                "volume_max": info.volume_max or 100.0}

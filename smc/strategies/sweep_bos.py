@@ -426,6 +426,8 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
     rr = abs(tp - entry) / risk
 
     active = [name for name, v in flags.items() if v]
+    from smc.core import CONFLUENCE_LABELS
+    labels = [CONFLUENCE_LABELS.get(name, name) for name in active]
     max_score = 7 if s.get("amd_enabled", False) else 6
     return Setup(
         pair=pair, direction=direction, zone=zone, sweep=sweep,
@@ -433,8 +435,9 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
         rr=round(rr, 2), time=now, entry_is_limit=True,  # toujours un ordre limite (zone ou retest)
         score=score, strategy="sweep_bos", invalidation=sweep.level,
         amd=flags.get("amd", False), amd_level=amd_level,
+        max_score=max_score, confluences=labels,
         comments=[f"sweep H4 {sweep.side} @{sweep.level:.5f} (rejet mèche)",
                   f"BOS M15 @{bos_level:.5f}",
                   f"entrée: {entry_kind}",
                   f"score {score}/{max_score} "
-                  f"({', '.join(active) if active else 'aucune confluence'})"])
+                  f"({', '.join(labels) if labels else 'aucune confluence'})"])

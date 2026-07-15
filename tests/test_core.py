@@ -590,3 +590,37 @@ class TestMarketHours:
         assert market_entry_blocked(
             monday_0030, {"week_open_blackout_minutes": 0,
                           "rollover_blackout": ""}) is None
+
+
+# ---------------------------------------------------------------------------
+# Taille de position
+# ---------------------------------------------------------------------------
+
+from smc.core import position_size  # noqa: E402
+
+
+class TestPositionSize:
+    def test_basic_1pct(self):
+        # 10k, 1% = 100 ; stop 50 pips ; 10/pip/lot -> 0.2 lot exact
+        r = position_size(10000, 1.0, 1.1000, 1.0950, 0.0001, 10.0)
+        assert r["stop_pips"] == 50.0
+        assert r["lots"] == 0.2
+        assert r["risk_amount"] == pytest.approx(100.0)
+
+    def test_rounds_down_to_step(self):
+        # lot théorique 0.267 -> arrondi INFÉRIEUR au pas 0.01 = 0.26
+        r = position_size(10000, 2.0, 1.1000, 1.0925, 0.0001, 10.0)
+        # risk 200, stop 75 pips, risk/lot 750 -> 0.2666..
+        assert r["lots"] == 0.26
+        assert r["risk_amount"] <= 200.0  # jamais au-dessus du risque visé
+
+    def test_min_volume_floor(self):
+        # risque minuscule -> plancher au volume min du broker
+        r = position_size(10000, 0.01, 1.1000, 1.0000, 0.0001, 10.0)
+        assert r["lots"] == 0.01
+
+    def test_zero_stop_returns_none(self):
+        assert position_size(10000, 1.0, 1.1000, 1.1000, 0.0001, 10.0) is None
+
+    def test_unknown_pip_value_returns_none(self):
+        assert position_size(10000, 1.0, 1.1000, 1.0950, 0.0001, 0.0) is None
