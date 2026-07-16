@@ -155,9 +155,10 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
             except Exception as exc:  # noqa: BLE001 — l'alerte part même sans sizing
                 log.warning("Taille de position non calculée pour %s : %s", pair, exc)
 
-            # Règle 1 trade/jour : seul le 1er setup du jour part sur Telegram,
-            # les suivants sont stockés en base (alerted=0) pour analyse.
-            can_alert = alerts_sent_today(conn) < cfg["scanner"]["max_telegram_alerts_per_day"]
+            # Quota d'alertes/jour (0 = illimité). Au-delà, le setup est stocké
+            # en base (alerted=0) mais pas envoyé sur Telegram.
+            daily_cap = cfg["scanner"]["max_telegram_alerts_per_day"]
+            can_alert = daily_cap <= 0 or alerts_sent_today(conn) < daily_cap
             sent = False
             if can_alert:
                 sent = send_message(env["telegram_token"], env["telegram_chat_id"],

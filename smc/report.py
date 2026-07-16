@@ -126,6 +126,17 @@ def _summary_section(trades: pd.DataFrame, stats: dict, per_pair: dict,
         f"profit factor <b>{'∞' if pf == float('inf') else f'{pf:.2f}'}</b>, "
         f"drawdown max {stats['max_drawdown_r']:.1f} R.")
 
+    # Fréquence : trades par jour de trading (jours sans trade exclus)
+    per_day = trades.groupby(trades["open_time"].dt.date).size()
+    if len(per_day):
+        dist = per_day.value_counts().sort_index()
+        dist_txt = ", ".join(f"{int(n)} trade(s) : {int(c)} jour(s)"
+                             for n, c in dist.items())
+        points.append(
+            f"<b>Fréquence : {per_day.mean():.1f} trade(s) par jour actif</b> "
+            f"(max {int(per_day.max())} le même jour, sur {len(per_day)} jours "
+            f"avec au moins un trade). Répartition — {dist_txt}.")
+
     # Meilleure / pire paire
     scored = {p: s for p, s in per_pair.items() if s.get("trades")}
     if len(scored) >= 2:
