@@ -123,3 +123,52 @@ def render_backtest_folder(trades: pd.DataFrame, data: dict, report_html: str,
     log.info("Dossier Backtest généré : %s (%d images de trades)",
              out, len(list((out / 'trades').glob('*.png'))))
     return out
+
+
+def render_setup_png(ltf: pd.DataFrame, setup, path: Path,
+                     bars: int = 60) -> bool:
+    """Image d'un setup LIVE pour l'alerte Telegram : dernières `bars` bougies
+    M15 + niveau de liquidité balayé + extrême du sweep + zone d'entrée +
+    entrée/SL/TP. Retourne True si l'image a été générée."""
+    win = ltf.tail(bars).reset_index(drop=True)
+    if len(win) < 10:
+        return False
+    n = len(win)
+    up = setup.direction == "long"
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    _plot_candles(ax, win)
+
+    # Zone d'entrée (rectangle translucide sur toute la largeur)
+    ztop, zbot = setup.zone.top, setup.zone.bottom
+    ax.add_patch(Rectangle((-0.5, zbot), n, max(ztop - zbot, 1e-9),
+                           facecolor="#2563eb", alpha=0.12, zorder=0))
+    ax.axhspan(zbot, ztop, color="#2563eb", alpha=0.04, zorder=0)
+
+    # Niveau de liquidité balayé + extrême du sweep
+    if setup.sweep is not None:
+        ax.axhline(setup.sweep.level, color="#9333ea", linewidth=1.1,
+                   linestyle=":", zorder=3,
+                   label=f"Liquidité balayée {setup.sweep.level:.5f}")
+        ax.annotate("SWEEP", (n * 0.02, setup.sweep.extreme), fontsize=8,
+                    color="#9333ea", va="center")
+        ax.plot([0, n - 1], [setup.sweep.extreme, setup.sweep.extreme],
+                color="#9333ea", linewidth=0.7, alpha=0.5, zorder=1)
+
+    # Entrée / SL / TP
+    ax.axhline(setup.entry, color="#2563eb", linewidth=1.3,
+               label=f"Entrée {setup.entry:.5f}")
+    ax.axhline(setup.sl, color=_DOWN, linewidth=1.3, linestyle="--",
+               label=f"SL {setup.sl:.5f}")
+    ax.axhline(setup.tp, color=_UP, linewidth=1.3, linestyle="--",
+               label=f"TP {setup.tp:.5f}")
+
+    score = f" · score {setup.score}/{setup.max_score}" if setup.score else ""
+    ax.set_title(f"{setup.pair} — {'LONG ▲' if up else 'SHORT ▼'} — "
+                 f"{setup.zone.kind}{score}",
+                 fontsize=12, color=_UP if up else _DOWN)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=100)
+    plt.close(fig)
+    return True

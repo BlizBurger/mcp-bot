@@ -123,6 +123,8 @@ scanner:
   history_bars_ltf: 300       # bougies M15 chargées à chaque scan
   history_bars_htf: 120       # bougies H4 chargées à chaque scan
   history_bars_d1: 60         # bougies Daily (pour require_d1_alignment)
+  alert_chart: true           # joindre une image annotée du setup à l'alerte
+                              # Telegram (bougies + sweep + zone + entrée/SL/TP)
   max_telegram_alerts_per_day: 0   # nombre max d'alertes Telegram par jour.
                                    # 0 = ILLIMITÉ (tous les setups sont alertés).
                                    # Mettre 1 pour la règle FTMO stricte 1 trade/jour.

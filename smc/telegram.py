@@ -15,6 +15,7 @@ from smc.core import Setup
 log = logging.getLogger("smc.telegram")
 
 _API = "https://api.telegram.org/bot{token}/sendMessage"
+_PHOTO_API = "https://api.telegram.org/bot{token}/sendPhoto"
 _RETRIES = 4
 _BACKOFF = 2  # 2s, 4s, 8s, 16s
 
@@ -40,6 +41,33 @@ def send_message(token: str, chat_id: str, text: str) -> bool:
         if attempt < _RETRIES:
             time.sleep(_BACKOFF ** attempt)
     log.error("Alerte Telegram abandonnée après %d tentatives", _RETRIES)
+    return False
+
+
+def send_photo(token: str, chat_id: str, photo_path: str, caption: str) -> bool:
+    """Envoie une image (le graphique du setup) avec l'alerte en légende.
+    Ne lève jamais ; retry + backoff comme send_message. La légende Telegram
+    est limitée à 1024 caractères — tronquée au besoin."""
+    if not token or not chat_id:
+        log.error("Telegram non configuré")
+        return False
+    caption = caption[:1024]
+    for attempt in range(1, _RETRIES + 1):
+        try:
+            with open(photo_path, "rb") as fh:
+                r = requests.post(
+                    _PHOTO_API.format(token=token),
+                    data={"chat_id": chat_id, "caption": caption,
+                          "parse_mode": "HTML"},
+                    files={"photo": fh}, timeout=30,
+                )
+            if r.ok:
+                return True
+            log.warning("Telegram photo HTTP %s : %s", r.status_code, r.text[:200])
+        except (requests.RequestException, OSError) as exc:
+            log.warning("Telegram photo tentative %d/%d : %s", attempt, _RETRIES, exc)
+        if attempt < _RETRIES:
+            time.sleep(_BACKOFF ** attempt)
     return False
 
 

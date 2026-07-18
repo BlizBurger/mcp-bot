@@ -28,7 +28,7 @@ from smc.db import alerts_sent_today, connect, insert_setup, setup_already_store
 from smc.logging_setup import log_warnings_banner, setup_logging
 from smc.mt5_client import MT5Client, MT5Error
 from smc.news import load_news
-from smc.telegram import format_setup, send_message
+from smc.telegram import format_setup, send_message, send_photo
 
 log = logging.getLogger("smc.scanner")
 
@@ -161,8 +161,24 @@ def scan_once(client: MT5Client, cfg: dict, conn, env: dict) -> list[str]:
             can_alert = daily_cap <= 0 or alerts_sent_today(conn) < daily_cap
             sent = False
             if can_alert:
-                sent = send_message(env["telegram_token"], env["telegram_chat_id"],
-                                    format_setup(setup, cfg.get("exits"), sizing))
+                msg = format_setup(setup, cfg.get("exits"), sizing)
+                # Image annotée du setup jointe à l'alerte (si activée + dispo)
+                img_ok = False
+                if cfg.get("scanner", {}).get("alert_chart", True):
+                    try:
+                        from smc.charts import render_setup_png
+                        img_dir = Path(cfg["paths"]["reports"]) / "alerts"
+                        img_dir.mkdir(parents=True, exist_ok=True)
+                        img = img_dir / f"{pair}_{now:%Y%m%d_%H%M}.png"
+                        if render_setup_png(d["ltf"], setup, img):
+                            sent = send_photo(env["telegram_token"],
+                                              env["telegram_chat_id"], str(img), msg)
+                            img_ok = sent
+                    except Exception:  # noqa: BLE001 — l'alerte texte reste le repli
+                        log.exception("Graphique d'alerte non généré pour %s", pair)
+                if not img_ok:  # repli texte si image indisponible
+                    sent = send_message(env["telegram_token"],
+                                        env["telegram_chat_id"], msg)
             insert_setup(conn, setup, alerted=sent)
             log.info("SETUP %s %s : entrée %.5f SL %.5f TP %.5f — %s",
                      pair, setup.direction, setup.entry, setup.sl, setup.tp,
