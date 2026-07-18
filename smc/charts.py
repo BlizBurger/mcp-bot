@@ -125,50 +125,93 @@ def render_backtest_folder(trades: pd.DataFrame, data: dict, report_html: str,
     return out
 
 
+# Thème sombre calqué sur l'app MT5 mobile
+_MT5_BG = "#000000"
+_MT5_BULL = "#6c5ce7"   # violet = haussière
+_MT5_BEAR = "#ffffff"   # blanc = baissière
+_MT5_GRID = "#2a2a2a"
+_MT5_TEXT = "#c8c8c8"
+_MT5_PRICE = "#26c6a6"  # ligne de prix courant (teal)
+
+
 def render_setup_png(ltf: pd.DataFrame, setup, path: Path,
                      bars: int = 60) -> bool:
-    """Image d'un setup LIVE pour l'alerte Telegram : dernières `bars` bougies
-    M15 + niveau de liquidité balayé + extrême du sweep + zone d'entrée +
-    entrée/SL/TP. Retourne True si l'image a été générée."""
+    """Image d'un setup LIVE pour l'alerte Telegram, au look MT5 mobile :
+    fond noir, bougies violettes (haussières) / blanches (baissières), prix à
+    droite, heures en bas + niveau de liquidité balayé, sweep, zone, E/SL/TP."""
     win = ltf.tail(bars).reset_index(drop=True)
     if len(win) < 10:
         return False
     n = len(win)
     up = setup.direction == "long"
 
-    fig, ax = plt.subplots(figsize=(11, 6))
-    _plot_candles(ax, win)
+    fig, ax = plt.subplots(figsize=(9, 11), facecolor=_MT5_BG)  # portrait, façon tél
+    ax.set_facecolor(_MT5_BG)
 
-    # Zone d'entrée (rectangle translucide sur toute la largeur)
+    # Bougies style MT5
+    for x, row in enumerate(win.itertuples()):
+        bull = row.close >= row.open
+        color = _MT5_BULL if bull else _MT5_BEAR
+        ax.plot([x, x], [row.low, row.high], color=color, linewidth=0.9, zorder=2)
+        body_low, body_high = sorted((row.open, row.close))
+        ax.add_patch(Rectangle((x - 0.32, body_low), 0.64,
+                               max(body_high - body_low, 1e-9),
+                               facecolor=color, edgecolor=color, zorder=3))
+
+    # Zone d'entrée (box bleue translucide sur toute la largeur)
     ztop, zbot = setup.zone.top, setup.zone.bottom
     ax.add_patch(Rectangle((-0.5, zbot), n, max(ztop - zbot, 1e-9),
-                           facecolor="#2563eb", alpha=0.12, zorder=0))
-    ax.axhspan(zbot, ztop, color="#2563eb", alpha=0.04, zorder=0)
+                           facecolor="#3b82f6", alpha=0.18, edgecolor="#3b82f6",
+                           linewidth=0.8, zorder=1))
+    ax.annotate(f"  Zone {setup.zone.kind}", (0, ztop), fontsize=8,
+                color="#7aa7ff", va="bottom", zorder=5)
 
-    # Niveau de liquidité balayé + extrême du sweep
+    # Niveau de liquidité balayé + sweep
     if setup.sweep is not None:
-        ax.axhline(setup.sweep.level, color="#9333ea", linewidth=1.1,
-                   linestyle=":", zorder=3,
+        ax.axhline(setup.sweep.level, color="#ffb300", linewidth=1.1,
+                   linestyle=(0, (4, 3)), zorder=4,
                    label=f"Liquidité balayée {setup.sweep.level:.5f}")
-        ax.annotate("SWEEP", (n * 0.02, setup.sweep.extreme), fontsize=8,
-                    color="#9333ea", va="center")
-        ax.plot([0, n - 1], [setup.sweep.extreme, setup.sweep.extreme],
-                color="#9333ea", linewidth=0.7, alpha=0.5, zorder=1)
+        ax.annotate("SWEEP", (n * 0.01, setup.sweep.extreme), fontsize=8,
+                    color="#ffb300", va="center", zorder=5)
 
     # Entrée / SL / TP
-    ax.axhline(setup.entry, color="#2563eb", linewidth=1.3,
+    ax.axhline(setup.entry, color="#4d9fff", linewidth=1.4,
                label=f"Entrée {setup.entry:.5f}")
-    ax.axhline(setup.sl, color=_DOWN, linewidth=1.3, linestyle="--",
+    ax.axhline(setup.sl, color="#ff5252", linewidth=1.4, linestyle="--",
                label=f"SL {setup.sl:.5f}")
-    ax.axhline(setup.tp, color=_UP, linewidth=1.3, linestyle="--",
+    ax.axhline(setup.tp, color="#4caf50", linewidth=1.4, linestyle="--",
                label=f"TP {setup.tp:.5f}")
 
+    # Prix courant : ligne teal + étiquette à droite (comme MT5)
+    last = float(win["close"].iloc[-1])
+    ax.axhline(last, color=_MT5_PRICE, linewidth=0.8, linestyle=(0, (2, 2)), zorder=4)
+    ax.annotate(f"{last:.5f}", (n - 0.5, last), fontsize=8, color=_MT5_BG,
+                va="center", ha="left", zorder=6,
+                bbox=dict(boxstyle="square,pad=0.2", fc=_MT5_PRICE, ec="none"))
+
+    # Axes : prix à DROITE, heures en bas façon "17 Jul 11:45"
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
+    ax.tick_params(colors=_MT5_TEXT, labelsize=8)
+    step = max(n // 6, 1)
+    ax.set_xticks(range(0, n, step))
+    ax.set_xticklabels([win["time"].iloc[i].strftime("%d %b %H:%M")
+                        for i in range(0, n, step)],
+                       rotation=0, fontsize=7, color=_MT5_TEXT)
+    ax.grid(True, color=_MT5_GRID, linewidth=0.6, linestyle=(0, (1, 3)))
+    for spine in ax.spines.values():
+        spine.set_color("#444444")
+    ax.margins(x=0.02)
+
     score = f" · score {setup.score}/{setup.max_score}" if setup.score else ""
-    ax.set_title(f"{setup.pair} — {'LONG ▲' if up else 'SHORT ▼'} — "
+    ax.set_title(f"{setup.pair} {'LONG ▲' if up else 'SHORT ▼'} · "
                  f"{setup.zone.kind}{score}",
-                 fontsize=12, color=_UP if up else _DOWN)
-    ax.legend(loc="best", fontsize=8)
+                 fontsize=13, color="#ffffff", pad=10)
+    leg = ax.legend(loc="upper left", fontsize=7.5, framealpha=0.85,
+                    facecolor="#111111", edgecolor="#333333")
+    for txt in leg.get_texts():
+        txt.set_color(_MT5_TEXT)
     fig.tight_layout()
-    fig.savefig(path, dpi=100)
+    fig.savefig(path, dpi=110, facecolor=_MT5_BG)
     plt.close(fig)
     return True
