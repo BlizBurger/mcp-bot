@@ -135,7 +135,7 @@ _MT5_PRICE = "#26c6a6"  # ligne de prix courant (teal)
 
 
 def render_setup_png(ltf: pd.DataFrame, setup, path: Path,
-                     bars: int = 60) -> bool:
+                     bars: int = 90) -> bool:
     """Image d'un setup LIVE pour l'alerte Telegram, au look MT5 mobile :
     fond noir, bougies violettes (haussières) / blanches (baissières), prix à
     droite, heures en bas + niveau de liquidité balayé, sweep, zone, E/SL/TP."""
@@ -203,11 +203,15 @@ def render_setup_png(ltf: pd.DataFrame, setup, path: Path,
         spine.set_color("#444444")
     ax.margins(x=0.02)
 
-    score = f" · score {setup.score}/{setup.max_score}" if setup.score else ""
-    ax.set_title(f"{setup.pair} {'LONG ▲' if up else 'SHORT ▼'} · "
-                 f"{setup.zone.kind}{score}",
-                 fontsize=13, color="#ffffff", pad=10)
-    leg = ax.legend(loc="upper left", fontsize=7.5, framealpha=0.85,
+    # En-tête façon MT5 (pair ▾ TF + sens + score), en haut à gauche
+    score = f"  ·  score {setup.score}/{setup.max_score}" if setup.score else ""
+    sens = "LONG ▲" if up else "SHORT ▼"
+    ax.text(0.012, 0.985, f"{setup.pair} ▾  M15", transform=ax.transAxes,
+            fontsize=12, color="#e8e8e8", va="top", ha="left", weight="bold")
+    ax.text(0.012, 0.945,
+            f"{sens}{score}", transform=ax.transAxes, fontsize=10,
+            color=_MT5_BULL if up else "#e8e8e8", va="top", ha="left")
+    leg = ax.legend(loc="lower left", fontsize=7.5, framealpha=0.85,
                     facecolor="#111111", edgecolor="#333333")
     for txt in leg.get_texts():
         txt.set_color(_MT5_TEXT)
