@@ -10,19 +10,25 @@ import pandas as pd
 from smc import WARNINGS
 
 _CSS = """
-body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 960px;
-       color: #1a1a2e; }
-h1 { font-size: 1.5rem; } h2 { font-size: 1.15rem; margin-top: 2rem; }
+body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 980px;
+       color: #d8d8e0; background: #0a0a0f; padding: 0 1rem; }
+h1 { font-size: 1.5rem; color: #fff; } h2 { font-size: 1.15rem; margin-top: 2rem;
+       color: #fff; border-bottom: 1px solid #26263a; padding-bottom: .3rem; }
+a { color: #6c8cff; }
 table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: right; }
-th { background: #f0f0f5; } td:first-child, th:first-child { text-align: left; }
-.win { color: #0a7d32; } .loss { color: #c0392b; }
-.warn { background: #fff6e5; border: 1px solid #e6b800; border-radius: 6px;
-        padding: 1rem; font-size: 0.85rem; }
-.stats { display: flex; gap: 1rem; flex-wrap: wrap; }
-.stat { background: #f0f0f5; border-radius: 8px; padding: 0.8rem 1.2rem; }
-.stat b { display: block; font-size: 1.3rem; }
-svg { background: #fafafa; border: 1px solid #eee; border-radius: 6px; }
+th, td { border: 1px solid #26263a; padding: 5px 9px; text-align: right; }
+th { background: #17172a; color: #cfcfe6; }
+td:first-child, th:first-child { text-align: left; }
+tr:nth-child(even) td { background: #101018; }
+.win { color: #26c6a6; } .loss { color: #ff6b6b; }
+.warn { background: #1c1608; border: 1px solid #6b5310; border-radius: 8px;
+        padding: 1rem; font-size: 0.85rem; color: #e8d9a8; }
+.stats { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+.stat { background: #14141f; border: 1px solid #26263a; border-radius: 10px;
+        padding: 0.8rem 1.2rem; min-width: 90px; }
+.stat b { display: block; font-size: 1.4rem; color: #fff; }
+svg { background: #050508; border: 1px solid #26263a; border-radius: 8px; }
+code { background: #17172a; padding: 1px 5px; border-radius: 4px; }
 """
 
 
@@ -41,8 +47,8 @@ def _equity_svg(equity: list[float], width: int = 900, height: int = 260) -> str
         f'<svg viewBox="0 0 {width} {height}" width="100%" role="img" '
         f'aria-label="Courbe d\'équité en R cumulés">'
         f'<line x1="{pad}" y1="{zero:.1f}" x2="{width-pad}" y2="{zero:.1f}" '
-        f'stroke="#bbb" stroke-dasharray="4 3"/>'
-        f'<polyline points="{pts}" fill="none" stroke="#2563eb" stroke-width="2"/>'
+        f'stroke="#555" stroke-dasharray="4 3"/>'
+        f'<polyline points="{pts}" fill="none" stroke="#26c6a6" stroke-width="2"/>'
         f'<text x="{pad}" y="{zero-6:.1f}" font-size="11" fill="#888">0 R</text>'
         f'<text x="{pad}" y="16" font-size="11" fill="#888">max {hi:.1f} R</text>'
         f"</svg>"
