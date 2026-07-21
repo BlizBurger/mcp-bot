@@ -347,39 +347,75 @@ _SWEEP_VARIANTS: list[tuple[str, dict, set | None]] = [
 ]
 
 
-def run_compare_strategies(cfg: dict, pairs: list[str], days: int) -> pd.DataFrame:
-    """Backtest chaque stratégie (et les paliers de score pour sweep_bos) sur
-    la même période. ⚠️ Exploration in-sample, risque d'overfitting."""
+def _split_row(label: str, df: pd.DataFrame, cutoff) -> dict:
+    """Ligne IS/OOS pour un DataFrame de trades (ou stats simples si pas de split)."""
+    if cutoff is not None and not df.empty:
+        s_is = compute_stats(df[df["open_time"] < cutoff])
+        s_oos = compute_stats(df[df["open_time"] >= cutoff])
+        log.info("%-26s | IS : %s || OOS : %s", label, _fmt_seg(s_is), _fmt_seg(s_oos))
+        return {"strategie": label,
+                "is_trades": s_is.get("trades", 0),
+                "is_total_r": round(s_is.get("total_r", 0), 1) if s_is.get("trades") else None,
+                "is_pf": round(s_is["profit_factor"], 2)
+                if s_is.get("trades") and s_is["profit_factor"] != float("inf") else None,
+                "oos_trades": s_oos.get("trades", 0),
+                "oos_total_r": round(s_oos.get("total_r", 0), 1) if s_oos.get("trades") else None,
+                "oos_pf": round(s_oos["profit_factor"], 2)
+                if s_oos.get("trades") and s_oos["profit_factor"] != float("inf") else None}
+    s = compute_stats(df)
+    log.info("%-26s : %s | DD %s R", label, _fmt_seg(s),
+             round(s["max_drawdown_r"], 1) if s.get("trades") else "-")
+    return {"strategie": label, "trades": s.get("trades", 0),
+            "win_rate_%": round(s["win_rate"] * 100, 1) if s.get("trades") else None,
+            "total_r": round(s.get("total_r", 0), 1) if s.get("trades") else None,
+            "profit_factor": round(s["profit_factor"], 2)
+            if s.get("trades") and s["profit_factor"] != float("inf") else None,
+            "drawdown_r": round(s["max_drawdown_r"], 1) if s.get("trades") else None}
+
+
+def run_compare_strategies(cfg: dict, pairs: list[str], days: int,
+                           split: float = 0.0) -> pd.DataFrame:
+    """Backtest chaque stratégie sur la même période. Avec `split`, chaque
+    stratégie est jugée in-sample ET vérifiée out-of-sample."""
     import copy
     data = fetch_data(cfg, pairs, days)
+    cutoff = datetime.now() - timedelta(days=days * (1 - split)) if split else None
     variants: list[tuple[str, dict]] = []
     for name in STRATEGIES:
         base = copy.deepcopy(cfg)
         base["strategy_name"] = name
         variants.append((name, base))
         if name == "sweep_bos":
-            for min_score in (2, 3):
-                v = copy.deepcopy(base)
-                v["sweep_bos"]["min_score"] = min_score
-                variants.append((f"{name} (score >= {min_score})", v))
+            v = copy.deepcopy(base)
+            v["sweep_bos"]["min_score"] = 3
+            variants.append((f"{name} (score>=3)", v))
+    rows = [_split_row(label, simulate_all(vcfg, data), cutoff)
+            for label, vcfg in variants]
+    return pd.DataFrame(rows)
+
+
+# Chemin du paramètre R:R selon la stratégie (pour le sweep de R:R)
+_RR_PARAM = {"sweep_bos": ("sweep_bos", "min_rr"),
+             "amd_asian": ("strategy", "risk_reward"),
+             "ema_rsi": ("ema_rsi", "risk_reward"),
+             "donchian": ("donchian", "risk_reward"),
+             "bollinger": ("bollinger", "risk_reward"),
+             "ema_cross": ("ema_cross", "risk_reward")}
+
+
+def run_rr_sweep(cfg: dict, pairs: list[str], days: int,
+                 split: float = 0.0) -> pd.DataFrame:
+    """Balaye plusieurs R:R pour la stratégie active, avec validation OOS."""
+    import copy
+    name = cfg.get("strategy_name", "sweep_bos")
+    section, key = _RR_PARAM.get(name, ("strategy", "risk_reward"))
+    data = fetch_data(cfg, pairs, days)
+    cutoff = datetime.now() - timedelta(days=days * (1 - split)) if split else None
     rows = []
-    for label, vcfg in variants:
-        df = simulate_all(vcfg, data)
-        s = compute_stats(df)
-        rows.append({
-            "strategie": label,
-            "trades": s.get("trades", 0),
-            "win_rate_%": round(s["win_rate"] * 100, 1) if s.get("trades") else None,
-            "r_moyen": round(s["avg_r"], 2) if s.get("trades") else None,
-            "total_r": round(s["total_r"], 1) if s.get("trades") else None,
-            "profit_factor": round(s["profit_factor"], 2)
-            if s.get("trades") and s["profit_factor"] != float("inf") else None,
-            "drawdown_r": round(s["max_drawdown_r"], 1) if s.get("trades") else None,
-        })
-        log.info("%-28s : %3d trades | WR %s%% | total %s R | PF %s | DD %s R",
-                 label, rows[-1]["trades"], rows[-1]["win_rate_%"],
-                 rows[-1]["total_r"], rows[-1]["profit_factor"],
-                 rows[-1]["drawdown_r"])
+    for rr in (1.0, 1.5, 2.0, 2.5, 3.0):
+        v = copy.deepcopy(cfg)
+        v[section][key] = rr
+        rows.append(_split_row(f"{name} R:R {rr}", simulate_all(v, data), cutoff))
     return pd.DataFrame(rows)
 
 
@@ -450,6 +486,8 @@ def main() -> None:
                              "une pour mesurer son effet (diagnostic in-sample)")
     parser.add_argument("--compare-strategies", action="store_true",
                         help="backtest chaque stratégie sur la même période")
+    parser.add_argument("--rr-sweep", action="store_true",
+                        help="balaye plusieurs R:R pour la stratégie active")
     parser.add_argument("--strategy", type=str, default=None,
                         help=f"stratégie à utiliser ({', '.join(STRATEGIES)}) ; "
                              "défaut : strategy_name du config.yaml")
@@ -463,14 +501,20 @@ def main() -> None:
         cfg["strategy_name"] = args.strategy
         get_strategy(args.strategy)  # valide le nom tout de suite
 
-    if args.compare_strategies:
-        result = run_compare_strategies(cfg, pairs, args.days)
+    if args.compare_strategies or args.rr_sweep:
+        if args.rr_sweep:
+            result = run_rr_sweep(cfg, pairs, args.days, split=args.split)
+            tag = "rr_sweep"
+        else:
+            result = run_compare_strategies(cfg, pairs, args.days, split=args.split)
+            tag = "strategies"
         out_dir = Path(cfg["paths"]["reports"])
         out_dir.mkdir(parents=True, exist_ok=True)
-        path = out_dir / f"strategies_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        path = out_dir / f"{tag}_{datetime.now():%Y%m%d_%H%M%S}.csv"
         result.to_csv(path, index=False)
-        log.info("Comparatif stratégies écrit : %s", path)
-        log.warning("⚠️ Comparaison in-sample — valider en démo avant d'y croire.")
+        log.info("Comparatif écrit : %s", path)
+        log.warning("⚠️ Ne retenir que ce qui gagne AUSSI out-of-sample "
+                    "(--split), et valider en démo avant tout argent réel.")
         return
 
     if args.compare:

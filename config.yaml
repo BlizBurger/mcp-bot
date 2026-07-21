@@ -47,6 +47,35 @@ sweep_bos:
   amd_candidate_expiry_bars: 35  # candidat expiré sans progression (30-40)
   amd_timeframes: [H4, H1, M30, M15]  # H1/M30 rééchantillonnés depuis le M15
 
+# --- Stratégies classiques (labo de comparaison) : entrée marché, SL en ATR,
+# R:R paramétrable. htf_filter = n'entrer que dans le sens de la tendance H4.
+ema_rsi:                       # pullback RSI dans la tendance EMA (momentum)
+  ema_fast: 21
+  ema_slow: 50
+  rsi_period: 14
+  rsi_buy: 50                  # RSI repasse au-dessus => long (en tendance haussière)
+  rsi_sell: 50
+  atr_sl_mult: 1.5
+  risk_reward: 2.0
+  htf_filter: true
+donchian:                      # cassure de canal type Turtle (suivi de tendance)
+  channel: 20
+  atr_sl_mult: 1.5
+  risk_reward: 2.0
+  htf_filter: false
+bollinger:                     # retour à la moyenne depuis une bande (contre-tendance)
+  period: 20
+  std: 2.0
+  atr_sl_mult: 1.5
+  risk_reward: 1.5
+  htf_filter: false
+ema_cross:                     # croisement de moyennes (référence de base)
+  ema_fast: 20
+  ema_slow: 50
+  atr_sl_mult: 1.5
+  risk_reward: 2.0
+  htf_filter: false
+
 timeframes:
   htf: H4      # biais directionnel
   ltf: M15     # détection des setups
