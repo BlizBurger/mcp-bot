@@ -115,6 +115,32 @@ class MT5Client:
                 time.sleep(self.BACKOFF ** attempt)
         raise MT5Error(f"get_rates({symbol}) en échec : {last_exc}")
 
+    def get_rates_max(self, symbol: str, timeframe: str,
+                      max_count: int) -> pd.DataFrame:
+        """Récupère le MAXIMUM de bougies disponibles, jusqu'à `max_count`.
+
+        MT5 renvoie "Invalid params" si on demande plus de bougies que le
+        terminal n'en a en cache. On essaie donc des tailles décroissantes
+        (une seule tentative chacune, pour échouer vite) et on garde la plus
+        grande qui fonctionne."""
+        tf = _TIMEFRAME_NAMES[timeframe.upper()]
+        self.ensure_connected()
+        self.mt5.symbol_select(symbol, True)
+        ladder = [c for c in (max_count, 120_000, 90_000, 60_000, 40_000,
+                              20_000, 8_000, 3_000) if c <= max_count]
+        for count in ladder:
+            try:
+                rates = self.mt5.copy_rates_from_pos(symbol, tf, 0, count)
+            except Exception:  # noqa: BLE001
+                rates = None
+            if rates is not None and len(rates) > 0:
+                df = pd.DataFrame(rates)
+                df["time"] = pd.to_datetime(df["time"], unit="s")
+                return df[["time", "open", "high", "low", "close",
+                           "tick_volume"]].reset_index(drop=True)
+        raise MT5Error(f"get_rates_max({symbol} {timeframe}) : aucun palier n'a "
+                       f"renvoyé de données ({self.mt5.last_error()})")
+
     def get_rates_range(self, symbol: str, timeframe: str,
                         start: datetime, end: datetime) -> pd.DataFrame:
         """Historique borné pour le backtest."""

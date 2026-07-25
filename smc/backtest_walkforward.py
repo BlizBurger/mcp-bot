@@ -88,9 +88,9 @@ def fetch_full(cfg: dict, pairs: list[str], years: int
             except Exception:
                 pip = pip_size_fallback(pair, cfg)
             try:
-                htf = client.get_rates(pair, cfg["timeframes"]["htf"], htf_count)
-                ltf = client.get_rates(pair, cfg["timeframes"]["ltf"], ltf_count)
-                d1 = client.get_rates(pair, "D1", d1_count)
+                htf = client.get_rates_max(pair, cfg["timeframes"]["htf"], htf_count)
+                ltf = client.get_rates_max(pair, cfg["timeframes"]["ltf"], ltf_count)
+                d1 = client.get_rates_max(pair, "D1", d1_count)
             except Exception as exc:  # noqa: BLE001 — paire absente/insuffisante
                 log.warning("%s ignoré : %s", pair, exc)
                 continue
