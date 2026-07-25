@@ -30,7 +30,8 @@ from smc.logging_setup import log_warnings_banner, setup_logging
 from smc.mt5_client import MT5Client
 from smc.strategies import STRATEGIES
 from smc.walkforward import (
-    TradeResult, build_windows, compare_strategies_safely, evaluate_on_vault,
+    TradeResult, WindowResult, build_windows, bootstrap_expectancy_ci,
+    summarize_walkforward,
 )
 
 log = logging.getLogger("smc.walkforward")
@@ -154,6 +155,51 @@ def make_strategy_fn(name: str, base_cfg: dict):
 # Orchestration
 # --------------------------------------------------------------------------
 
+def simulate_full(cfg: dict, full: dict, name: str, params: dict) -> list[TradeResult]:
+    """Simule une stratégie UNE SEULE FOIS sur tout l'historique et renvoie
+    TOUS ses trades (répartis ensuite dans les fenêtres par date). C'est ce qui
+    rend le walk-forward praticable : au lieu de re-simuler par fenêtre, on
+    simule une fois puis on découpe par timestamp."""
+    vcfg = copy.deepcopy(cfg)
+    vcfg["strategy_name"] = name
+    for (section, key), value in (params or {}).items():
+        vcfg.setdefault(section, {})[key] = value
+    df = simulate_all(vcfg, full)
+    if df.empty:
+        return []
+    return [TradeResult(entry_time=r.open_time, exit_time=r.close_time,
+                        r_multiple=float(r.result_r), symbol=r.pair, strategy=name)
+            for r in df.itertuples()]
+
+
+def _in(trades: list[TradeResult], a, b) -> list[TradeResult]:
+    return [t for t in trades if a <= t.entry_time <= b]
+
+
+def walk_forward_from_trades(name: str, combos: list[tuple[dict, list[TradeResult]]],
+                             windows: list) -> list:
+    """Walk-forward par découpage temporel des trades pré-simulés. Si plusieurs
+    combos de paramètres, le meilleur est choisi sur le TRAIN de chaque fenêtre
+    (jamais sur le test), puis évalué sur le test."""
+    import statistics
+    results = []
+    for w in windows:
+        best_idx = 0
+        if len(combos) > 1:
+            best_score = float("-inf")
+            for i, (_, trades) in enumerate(combos):
+                tr = _in(trades, w.train_start, w.train_end)
+                if not tr:
+                    continue
+                score = statistics.mean(t.r_multiple for t in tr)
+                if score > best_score:
+                    best_score, best_idx = score, i
+        test_trades = _in(combos[best_idx][1], w.test_start, w.test_end)
+        results.append(WindowResult(window=w, trades=test_trades,
+                                    params_used=combos[best_idx][0]))
+    return results
+
+
 def run(cfg: dict, pairs: list[str], years: int, train_m: int, test_m: int,
         step_m: int, vault_m: int, strat_names: list[str],
         vault_strategy: str | None) -> dict:
@@ -164,43 +210,74 @@ def run(cfg: dict, pairs: list[str], years: int, train_m: int, test_m: int,
     real_end = pd.Timestamp(real_end).to_pydatetime()
 
     windows, (vault_start, vault_end) = build_windows(
-        real_start, real_end,
-        train_months=train_m, test_months=test_m, step_months=step_m,
-        vault_months=vault_m)
-
-    log.info("Plage réelle : %s → %s | %d fenêtres walk-forward | vault %s → %s",
+        real_start, real_end, train_months=train_m, test_months=test_m,
+        step_months=step_m, vault_months=vault_m)
+    log.info("Plage réelle : %s → %s | %d fenêtres | vault %s → %s",
              real_start.date(), real_end.date(), len(windows),
              vault_start.date(), vault_end.date())
     if len(windows) < 8:
-        log.warning("⚠️ Seulement %d fenêtres : historique trop court pour une "
-                    "conclusion statistiquement solide (viser 10-15). Résultats "
-                    "à prendre avec des pincettes.", len(windows))
+        log.warning("⚠️ Seulement %d fenêtres : historique un peu court pour une "
+                    "conclusion solide (viser 10-15).", len(windows))
 
-    loader = make_data_loader(full)
-    strategies = {name: (make_strategy_fn(name, cfg), _PARAM_GRIDS.get(name))
-                  for name in strat_names if name in STRATEGIES}
+    names = [n for n in strat_names if n in STRATEGIES]
+    # Pré-simulation : chaque stratégie (et chaque combo de sa grille) UNE fois
+    combos_by_strat: dict[str, list] = {}
+    for name in names:
+        grid = _PARAM_GRIDS.get(name) or [None]
+        combos = []
+        for gi, params in enumerate(grid):
+            log.info("Simulation complète %s (combo %d/%d) sur %s → %s...",
+                     name, gi + 1, len(grid), real_start.date(), real_end.date())
+            combos.append((params or {}, simulate_full(cfg, full, name, params)))
+        combos_by_strat[name] = combos
 
-    comparison = compare_strategies_safely(strategies, loader, windows)
+    # Walk-forward (découpage temporel) + résumé par stratégie
+    summaries = {}
+    for name, combos in combos_by_strat.items():
+        wr = walk_forward_from_trades(name, combos, windows)
+        summaries[name] = summarize_walkforward(wr, name)
+
+    proven = [n for n, s in summaries.items() if s.get("edge_statistiquement_prouve")]
+    warning = None
+    if len(names) > 5 and len(proven) <= 1:
+        warning = (f"⚠️ {len(names)} stratégies comparées : avec autant de tests, "
+                   "l'une peut ressortir par pur hasard. Seul le VAULT tranche.")
+
     report = {
         "genere_le": datetime.now().isoformat(),
         "plage_donnees": f"{real_start.date()} → {real_end.date()}",
         "n_fenetres": len(windows),
         "decoupage": f"train {train_m}m / test {test_m}m / step {step_m}m / vault {vault_m}m",
         "vault": f"{vault_start.date()} → {vault_end.date()} (scellé)",
-        **comparison,
+        "comparatif": summaries,
+        "strategies_avec_edge_prouve": proven,
+        "avertissement_comparaisons_multiples": warning,
     }
 
-    # Vault : UNIQUEMENT si demandé explicitement, sur une seule stratégie
+    # Vault : UNIQUEMENT si demandé, sur une seule stratégie (combo 0 = params
+    # de base ; le walk-forward sert à décider, pas le vault)
     if vault_strategy:
-        if vault_strategy not in strategies:
+        if vault_strategy not in combos_by_strat:
             report["vault_result"] = {"erreur": f"{vault_strategy} non testée"}
         else:
             log.warning("Évaluation VAULT sur %s — une seule fois, verdict final.",
                         vault_strategy)
-            fn = strategies[vault_strategy][0]
-            report["vault_result"] = evaluate_on_vault(
-                fn, {}, loader, vault_start, vault_end,
-                strategy_name=vault_strategy)
+            vtr = _in(combos_by_strat[vault_strategy][0][1], vault_start, vault_end)
+            if not vtr:
+                report["vault_result"] = {"strategy": vault_strategy,
+                                          "verdict": "Aucun trade sur le vault"}
+            else:
+                mean, lo, hi = bootstrap_expectancy_ci(vtr)
+                wr = sum(1 for t in vtr if t.r_multiple > 0) / len(vtr) * 100
+                report["vault_result"] = {
+                    "strategy": vault_strategy, "n_trades_vault": len(vtr),
+                    "win_rate_vault": round(wr, 1),
+                    "expectancy_vault": round(mean, 3),
+                    "IC_95%": (round(lo, 3) if lo == lo else "N/A",
+                               round(hi, 3) if hi == hi else "N/A"),
+                    "verdict": ("VALIDÉ sur données jamais vues — passable en démo réelle"
+                                if lo == lo and lo > 0 else
+                                "NON VALIDÉ — l'edge ne se confirme pas sur le vault.")}
     return report
 
 
