@@ -46,8 +46,9 @@ st.title("📡 SMC Scanner — tableau de bord")
 st.caption("Outil d'ALERTE uniquement — aucune exécution d'ordre. "
            "Décision et passage d'ordre 100% manuels.")
 
-tab_status, tab_strat, tab_bt, tab_alerts = st.tabs(
-    ["🟢 Statut", "📚 Stratégies", "🧪 Backtest & comparatif", "🔔 Alertes"])
+tab_status, tab_strat, tab_bt, tab_wf, tab_alerts = st.tabs(
+    ["🟢 Statut", "📚 Stratégies", "🧪 Backtest & comparatif",
+     "🔬 Walk-forward", "🔔 Alertes"])
 
 # --------------------------------------------------------------- Statut
 with tab_status:
@@ -152,6 +153,52 @@ with tab_bt:
     if comps:
         st.subheader("Dernier comparatif")
         st.dataframe(pd.read_csv(comps[0]), use_container_width=True, hide_index=True)
+
+# --------------------------------------------------------------- Walk-forward
+with tab_wf:
+    st.subheader("Validation walk-forward (multi-fenêtres, out-of-sample)")
+    st.caption("Bien plus rigoureux qu'un split unique : plusieurs fenêtres "
+               "train→test glissantes, intervalle de confiance bootstrap, "
+               "consistance inter-fenêtres, et un bloc « vault » scellé.")
+    c1, c2, c3, c4 = st.columns(4)
+    yrs = c1.number_input("Années d'historique", 2, 6, 4)
+    train_m = c2.number_input("Train (mois)", 3, 12, 6)
+    test_m = c3.number_input("Test (mois)", 1, 6, 2)
+    vault_m = c4.number_input("Vault (mois)", 2, 6, 3)
+    if st.button("🔬 Lancer le walk-forward", type="primary"):
+        cmd = [sys.executable, "-m", "smc.backtest_walkforward",
+               "--years", str(yrs), "--train-months", str(train_m),
+               "--test-months", str(test_m), "--vault-months", str(vault_m)]
+        with st.spinner("Walk-forward en cours (long, nécessite MT5)..."):
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  cwd=Path(__file__).parent)
+        st.code((proc.stdout or "")[-4000:] or proc.stderr[-2000:])
+
+    # dernier rapport walk-forward
+    bt_dir = Path(cfg["paths"]["reports"]).parent / "Backtest"
+    wf_dirs = sorted(bt_dir.glob("walkforward_*"), reverse=True) if bt_dir.exists() else []
+    if wf_dirs and (wf_dirs[0] / "rapport.json").exists():
+        rep = json.loads((wf_dirs[0] / "rapport.json").read_text(encoding="utf-8"))
+        st.markdown(f"**Dernier rapport** — {rep.get('plage_donnees')} · "
+                    f"{rep.get('n_fenetres')} fenêtres · {rep.get('decoupage')}")
+        if rep.get("avertissement_comparaisons_multiples"):
+            st.warning(rep["avertissement_comparaisons_multiples"])
+        rows = []
+        for nm, s in rep.get("comparatif", {}).items():
+            rows.append({"stratégie": nm, "trades OOS": s.get("n_trades_oos_total"),
+                         "WR %": s.get("win_rate_oos"),
+                         "espérance": s.get("expectancy_moyenne"),
+                         "IC bas": s.get("IC_95%_borne_basse"),
+                         "IC haut": s.get("IC_95%_borne_haute"),
+                         "edge prouvé": "✅" if s.get("edge_statistiquement_prouve") else "❌",
+                         "verdict": s.get("verdict_final", "")})
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        if "vault_result" in rep:
+            st.subheader("🔒 Vault (verdict final)")
+            st.json(rep["vault_result"])
+    else:
+        st.info("Aucun rapport walk-forward encore. Lance-en un ci-dessus.")
 
 # --------------------------------------------------------------- Alertes
 with tab_alerts:
