@@ -65,34 +65,45 @@ _PARAM_GRIDS: dict[str, list[dict] | None] = {
 # Chargement des données (une seule fois sur toute la plage)
 # --------------------------------------------------------------------------
 
-def fetch_full(cfg: dict, pairs: list[str], start: datetime,
-               end: datetime) -> tuple[dict, datetime, datetime]:
-    """Charge H4/M15/D1 de toutes les paires sur [start, end]. Retourne aussi
-    la plage réellement disponible (le broker peut ne pas remonter aussi loin)."""
+def fetch_full(cfg: dict, pairs: list[str], years: int
+               ) -> tuple[dict, datetime, datetime]:
+    """Charge H4/M15/D1 de toutes les paires par NOMBRE DE BOUGIES depuis
+    maintenant (copy_rates_from_pos, fiable) plutôt que par plage de dates
+    (copy_rates_range renvoie "Invalid params" si on demande plus loin que
+    l'historique disponible). Retourne (données, plage réelle)."""
+    # bougies/jour approx (forex ~24h/5j) — on sur-demande, MT5 rend le dispo
+    ltf_count = min(int(years * 365 * 100) + 500, 250_000)  # M15
+    htf_count = int(years * 365 * 7) + 300                  # H4
+    d1_count = int(years * 365) + 400                       # D1
     env = load_env()
     client = MT5Client(env)
     client.connect()
     full: dict = {}
-    real_start, real_end = end, start
+    real_start, real_end = None, None
     try:
         for pair in pairs:
-            log.info("Chargement %s (%s → %s)...", pair, start.date(), end.date())
+            log.info("Chargement %s (~%d ans)...", pair, years)
             try:
                 pip = client.pip_size(pair)
             except Exception:
                 pip = pip_size_fallback(pair, cfg)
             try:
-                htf = client.get_rates_range(pair, cfg["timeframes"]["htf"], start, end)
-                ltf = client.get_rates_range(pair, cfg["timeframes"]["ltf"], start, end)
-                d1 = client.get_rates_range(pair, "D1", start, end)
+                htf = client.get_rates(pair, cfg["timeframes"]["htf"], htf_count)
+                ltf = client.get_rates(pair, cfg["timeframes"]["ltf"], ltf_count)
+                d1 = client.get_rates(pair, "D1", d1_count)
             except Exception as exc:  # noqa: BLE001 — paire absente/insuffisante
                 log.warning("%s ignoré : %s", pair, exc)
                 continue
             full[pair] = {"pip": pip, "htf": htf, "ltf": ltf, "d1": d1}
-            real_start = min(real_start, ltf["time"].iloc[0])
-            real_end = max(real_end, ltf["time"].iloc[-1])
+            first, last = ltf["time"].iloc[0], ltf["time"].iloc[-1]
+            real_start = first if real_start is None else min(real_start, first)
+            real_end = last if real_end is None else max(real_end, last)
+            log.info("  %s : %d bougies M15 (%s → %s)", pair, len(ltf),
+                     first.date(), last.date())
     finally:
         client.shutdown()
+    if real_start is None:
+        real_start = real_end = datetime.now()
     return full, real_start, real_end
 
 
@@ -146,14 +157,14 @@ def make_strategy_fn(name: str, base_cfg: dict):
 def run(cfg: dict, pairs: list[str], years: int, train_m: int, test_m: int,
         step_m: int, vault_m: int, strat_names: list[str],
         vault_strategy: str | None) -> dict:
-    end = datetime.now()
-    start = end - timedelta(days=365 * years + 40)
-    full, real_start, real_end = fetch_full(cfg, pairs, start, end)
+    full, real_start, real_end = fetch_full(cfg, pairs, years)
     if not full:
-        return {"erreur": "aucune donnée chargée"}
+        return {"erreur": "aucune donnée chargée depuis MT5"}
+    real_start = pd.Timestamp(real_start).to_pydatetime()
+    real_end = pd.Timestamp(real_end).to_pydatetime()
 
     windows, (vault_start, vault_end) = build_windows(
-        real_start.to_pydatetime(), real_end.to_pydatetime(),
+        real_start, real_end,
         train_months=train_m, test_months=test_m, step_months=step_m,
         vault_months=vault_m)
 
@@ -188,8 +199,8 @@ def run(cfg: dict, pairs: list[str], years: int, train_m: int, test_m: int,
                         vault_strategy)
             fn = strategies[vault_strategy][0]
             report["vault_result"] = evaluate_on_vault(
-                fn, {}, loader, vault_start.to_pydatetime(),
-                vault_end.to_pydatetime(), strategy_name=vault_strategy)
+                fn, {}, loader, vault_start, vault_end,
+                strategy_name=vault_strategy)
     return report
 
 
