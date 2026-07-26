@@ -27,7 +27,7 @@ from typing import Optional
 import pandas as pd
 
 from smc.core import Setup, Sweep, Zone, atr, calendar_blocked, find_fvgs, \
-    find_order_blocks, in_window, market_entry_blocked, swing_points
+    find_order_blocks, in_window, market_entry_blocked, regime_adx, swing_points
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +325,21 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
         return None
     direction = "long" if sweep.side == "low" else "short"
     is_long = direction == "long"
+
+    # --- Filtre de régime de marché (optionnel, désactivé si regime_adx_min=0)
+    # Hypothèse : sweep+BOS marche mieux quand le H4 est en tendance nette
+    # plutôt que dans le bruit d'un range. ADX = force de tendance. Si
+    # regime_align, on n'entre que dans le sens du H4 (+DI vs -DI). L'ADX est
+    # calculé sur les H4 déjà closes (aucun regard vers le futur).
+    adx_min = float(s.get("regime_adx_min", 0) or 0)
+    if adx_min > 0:
+        adx_val, plus_di, minus_di = regime_adx(
+            h4_done, int(s.get("regime_adx_period", 14)))
+        if adx_val == adx_val:  # nan (historique court) => on ne filtre pas
+            if adx_val < adx_min:
+                return None
+            if s.get("regime_align", False) and is_long != (plus_di >= minus_di):
+                return None
 
     # --- 3. BOS M15 : clôture au-delà d'un swing M15, maintenant précisément --
     after = m15[m15["time"] > sweep_close_time]

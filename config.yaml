@@ -32,6 +32,13 @@ sweep_bos:
   entry_zone_kinds: [FVG, IFVG, Breaker]   # OB retiré après le test IS/OOS
                                  # (les entrées OB perdaient sur les deux
                                  # segments) ; le retest du BOS reste le repli
+  # --- Filtre de régime de marché (ADX sur H4). Hypothèse : sweep+BOS marche
+  # mieux quand le H4 est en tendance nette, pas dans le bruit d'un range.
+  # 0 = filtre DÉSACTIVÉ (comportement d'origine). Le walk-forward teste
+  # 20/25 + l'alignement directionnel UNIQUEMENT sur le train de chaque fenêtre.
+  regime_adx_min: 0            # ADX H4 minimum pour autoriser une entrée (0 = off)
+  regime_adx_period: 14
+  regime_align: false          # true = n'entrer que dans le sens du H4 (+DI/-DI)
   # --- Bonus AMD : accumulation (compression ATR) -> manipulation confirmée
   # juste avant le sweep. +1 point de score si la direction correspond.
   # JAMAIS bloquant : aucun trade sweep+BOS n'attend ni n'exige l'AMD.

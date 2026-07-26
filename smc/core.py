@@ -88,6 +88,42 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return tr.rolling(period).mean()
 
 
+def adx(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """ADX de Wilder + composantes directionnelles (+DI / -DI).
+
+    Mesure la FORCE de tendance (adx) et sa DIRECTION (+DI vs -DI). En repère :
+    ADX < 20 = range/bruit, 20-25 = tendance naissante, > 25 = tendance nette.
+    C'est un filtre de RÉGIME de marché, pas un signal d'entrée.
+
+    Retourne un DataFrame aux colonnes adx, plus_di, minus_di.
+    """
+    high, low, close = df["high"], df["low"], df["close"]
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+    prev_close = close.shift(1)
+    tr = pd.concat([high - low, (high - prev_close).abs(),
+                    (low - prev_close).abs()], axis=1).max(axis=1)
+    alpha = 1.0 / period
+    atr_ = tr.ewm(alpha=alpha, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=alpha, adjust=False).mean() / atr_
+    minus_di = 100 * minus_dm.ewm(alpha=alpha, adjust=False).mean() / atr_
+    denom = (plus_di + minus_di).replace(0, np.nan)
+    dx = 100 * (plus_di - minus_di).abs() / denom
+    adx_ = dx.ewm(alpha=alpha, adjust=False).mean()
+    return pd.DataFrame({"adx": adx_, "plus_di": plus_di, "minus_di": minus_di})
+
+
+def regime_adx(df: pd.DataFrame, period: int = 14) -> tuple[float, float, float]:
+    """(adx, +DI, -DI) sur la DERNIÈRE bougie, ou (nan, nan, nan) si l'historique
+    est trop court pour un ADX fiable (< 2×période)."""
+    if len(df) < period * 2 + 1:
+        return (float("nan"), float("nan"), float("nan"))
+    r = adx(df, period).iloc[-1]
+    return (float(r["adx"]), float(r["plus_di"]), float(r["minus_di"]))
+
+
 def swing_points(df: pd.DataFrame, k: int = 2) -> tuple[list[int], list[int]]:
     """Indices des swing highs et swing lows (extrême local sur k bougies de
     chaque côté)."""

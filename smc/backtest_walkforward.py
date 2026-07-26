@@ -44,13 +44,14 @@ _WARMUP = {"ltf": timedelta(days=20), "htf": timedelta(days=60),
 # Grilles de paramètres — testées UNIQUEMENT sur le train de chaque fenêtre.
 # Clés = (section_config, clé). Petites grilles exprès (comparaisons multiples).
 _PARAM_GRIDS: dict[str, list[dict] | None] = {
+    # Expérience en cours : le FILTRE DE RÉGIME (ADX H4) aide-t-il sweep_bos ?
+    # On tient les params de base fixes (config.yaml) et on ne fait varier que
+    # le filtre, pour isoler son effet. Combo 0 = filtre OFF (référence).
     "sweep_bos": [
-        {("sweep_bos", "min_wick_ratio"): 0.5, ("sweep_bos", "sl_buffer_pct"): 0.15,
-         ("sweep_bos", "min_rr"): 1.5},
-        {("sweep_bos", "min_wick_ratio"): 0.6, ("sweep_bos", "sl_buffer_pct"): 0.20,
-         ("sweep_bos", "min_rr"): 2.0},
-        {("sweep_bos", "min_wick_ratio"): 0.6, ("sweep_bos", "sl_buffer_pct"): 0.25,
-         ("sweep_bos", "min_rr"): 2.5},
+        {("sweep_bos", "regime_adx_min"): 0},
+        {("sweep_bos", "regime_adx_min"): 20},
+        {("sweep_bos", "regime_adx_min"): 25},
+        {("sweep_bos", "regime_adx_min"): 20, ("sweep_bos", "regime_align"): True},
     ],
     "donchian": [
         {("donchian", "channel"): 20, ("donchian", "atr_sl_mult"): 1.5,
