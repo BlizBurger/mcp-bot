@@ -380,23 +380,38 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
     min_size = atr_val * s.get("confluence_min_size_atr", 0.5)
     flags, zones = _confluences(leg, direction, pre_leg, min_size=min_size)
 
-    # --- 5. Entrée : confluence la plus proche du BOS, sinon retest du BOS ---
-    prio = {"FVG": 0, "OB": 0, "IFVG": 1, "Breaker": 1}
-    allowed = set(s.get("entry_zone_kinds", ["FVG", "OB", "IFVG", "Breaker"]))
-    usable = []
-    for kind, z in zones:
-        if kind not in allowed:
-            continue
-        edge = z.top if is_long else z.bottom      # bord proximal (prix au-dessus/en-dessous)
-        if (is_long and edge < last_close) or (not is_long and edge > last_close):
-            usable.append((prio[kind], abs(edge - bos_level), kind, z, edge))
-    if usable:
-        usable.sort(key=lambda x: (x[0], x[1]))
-        _, _, entry_kind, zone, entry = usable[0]
-    else:
-        entry_kind, entry = "retest BOS", bos_level
+    # --- 5. Entrée : selon entry_mode ----------------------------------------
+    #   "retest" (défaut) : ordre LIMITE sur la confluence la plus proche du BOS
+    #                       (FVG/OB/IFVG/Breaker), sinon retest du swing cassé.
+    #                       Patient : meilleur prix, mais certains setups ne se
+    #                       remplissent jamais.
+    #   "direct"          : entrée AU MARCHÉ à la clôture de la bougie de BOS,
+    #                       sans attendre le retour en zone. Agressif : plus de
+    #                       trades remplis, à moins bon prix. Le score de
+    #                       confluence reste calculé (pour comparer à qualité égale).
+    entry_mode = s.get("entry_mode", "retest")
+    if entry_mode == "direct":
+        entry_kind, entry, entry_is_limit = "Direct (BOS)", last_close, False
         zone = Zone("BOS", "bullish" if is_long else "bearish",
                     top=bos_level, bottom=bos_level, index=0)
+    else:
+        entry_is_limit = True
+        prio = {"FVG": 0, "OB": 0, "IFVG": 1, "Breaker": 1}
+        allowed = set(s.get("entry_zone_kinds", ["FVG", "OB", "IFVG", "Breaker"]))
+        usable = []
+        for kind, z in zones:
+            if kind not in allowed:
+                continue
+            edge = z.top if is_long else z.bottom  # bord proximal (prix au-dessus/en-dessous)
+            if (is_long and edge < last_close) or (not is_long and edge > last_close):
+                usable.append((prio[kind], abs(edge - bos_level), kind, z, edge))
+        if usable:
+            usable.sort(key=lambda x: (x[0], x[1]))
+            _, _, entry_kind, zone, entry = usable[0]
+        else:
+            entry_kind, entry = "retest BOS", bos_level
+            zone = Zone("BOS", "bullish" if is_long else "bearish",
+                        top=bos_level, bottom=bos_level, index=0)
 
     # Zone d'équilibre + OTE (dépendent du prix d'entrée)
     leg_low = min(float(leg["low"].min()), sweep.extreme) if is_long else float(leg["low"].min())
@@ -447,7 +462,7 @@ def find_setup(pair: str, data: dict, cfg: dict, pip: float,
     return Setup(
         pair=pair, direction=direction, zone=zone, sweep=sweep,
         entry=float(entry), sl=float(sl_price), tp=float(tp),
-        rr=round(rr, 2), time=now, entry_is_limit=True,  # toujours un ordre limite (zone ou retest)
+        rr=round(rr, 2), time=now, entry_is_limit=entry_is_limit,  # limite (retest) ou marché (direct)
         score=score, strategy="sweep_bos", invalidation=sweep.level,
         amd=flags.get("amd", False), amd_level=amd_level,
         max_score=max_score, confluences=labels,

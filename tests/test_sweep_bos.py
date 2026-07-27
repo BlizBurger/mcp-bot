@@ -176,6 +176,23 @@ class TestSweepBosSetup:
         assert setup_no_ob.zone.kind == "BOS"   # repli : retest du swing cassé
         assert setup_no_ob.entry != setup_ob.entry
 
+    def test_entry_mode_direct_vs_retest(self):
+        """entry_mode='direct' = entrée AU MARCHÉ à la clôture du BOS (variante
+        du collègue) ; 'retest' = ordre LIMITE en zone (la nôtre)."""
+        h4, m15 = build_scenario()
+        retest = get_strategy("sweep_bos")("EURUSD", {"htf": h4, "ltf": m15},
+                                           self.cfg(entry_mode="retest"), 0.0001)
+        direct = get_strategy("sweep_bos")("EURUSD", {"htf": h4, "ltf": m15},
+                                           self.cfg(entry_mode="direct"), 0.0001)
+        assert retest is not None and direct is not None
+        assert retest.entry_is_limit is True      # patiente : limite
+        assert direct.entry_is_limit is False     # agressive : marché
+        # l'entrée directe = clôture de la bougie de BOS
+        assert direct.entry == pytest.approx(float(m15["close"].iloc[-1]))
+        assert direct.zone.kind == "BOS"
+        # même SL structurel (sous l'extrême du sweep 0.9985) dans les deux cas
+        assert direct.sl < 0.9985 and retest.sl < 0.9985
+
 
 class TestPartialTake:
     """Prise partielle : +1R atteint puis retour à l'entrée -> on garde la

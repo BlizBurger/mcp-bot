@@ -62,6 +62,15 @@ _PARAM_GRIDS: dict[str, list[dict] | None] = {
     "ema_rsi": None, "bollinger": None, "ema_cross": None, "amd_asian": None,
 }
 
+# Presets : variantes d'UNE MÊME stratégie affichées comme des lignes DISTINCTES
+# du comparatif (A/B honnête, chacune son verdict). Sert au duel demandé :
+# entrée « retest » (patiente, la tienne) vs « Direct BOS » (agressive, celle du
+# collègue). display_name -> (strategie_reelle, params_fixes).
+_PRESETS: dict[str, tuple[str, dict]] = {
+    "sweep_bos_retest": ("sweep_bos", {("sweep_bos", "entry_mode"): "retest"}),
+    "sweep_bos_direct": ("sweep_bos", {("sweep_bos", "entry_mode"): "direct"}),
+}
+
 
 # --------------------------------------------------------------------------
 # Chargement des données (une seule fois sur toute la plage)
@@ -220,10 +229,17 @@ def run(cfg: dict, pairs: list[str], years: int, train_m: int, test_m: int,
         log.warning("⚠️ Seulement %d fenêtres : historique un peu court pour une "
                     "conclusion solide (viser 10-15).", len(windows))
 
-    names = [n for n in strat_names if n in STRATEGIES]
-    # Pré-simulation : chaque stratégie (et chaque combo de sa grille) UNE fois
+    names = [n for n in strat_names if n in STRATEGIES or n in _PRESETS]
+    # Pré-simulation : chaque stratégie (et chaque combo de sa grille) UNE fois.
+    # Un preset = une seule simulation à params fixes, affichée sous son nom.
     combos_by_strat: dict[str, list] = {}
     for name in names:
+        if name in _PRESETS:
+            real, preset = _PRESETS[name]
+            log.info("Simulation complète %s (preset de %s) sur %s → %s...",
+                     name, real, real_start.date(), real_end.date())
+            combos_by_strat[name] = [(preset, simulate_full(cfg, full, real, preset))]
+            continue
         grid = _PARAM_GRIDS.get(name) or [None]
         combos = []
         for gi, params in enumerate(grid):
@@ -314,7 +330,8 @@ def main() -> None:
     p.add_argument("--vault-months", type=int, default=3)
     p.add_argument("--pairs", type=str, default=",".join(cfg["pairs"]))
     p.add_argument("--strategies", type=str,
-                   default="sweep_bos,donchian,ema_rsi,bollinger,ema_cross,amd_asian")
+                   default="sweep_bos_retest,sweep_bos_direct,"
+                           "donchian,ema_rsi,bollinger,ema_cross,amd_asian")
     p.add_argument("--vault-strategy", type=str, default=None,
                    help="évalue le vault sur CETTE stratégie (une seule fois)")
     args = p.parse_args()
