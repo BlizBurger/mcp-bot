@@ -2,7 +2,7 @@
 # Règle : changer UNE option à la fois et la valider au walk-forward.
 
 symbols:
-  broker: XAUUSD          # nom exact du symbole chez le broker MT5 (à vérifier)
+  broker: XAUUSD          # nom exact du symbole chez le broker MT5 (vérifié FTMO)
   futures: GC.v.0         # Databento : contrat GC continu, roulé sur le volume
   dataset: GLBX.MDP3      # CME Globex
 
@@ -15,7 +15,13 @@ data:
                  2026-04-10, 2026-05-24, 2026-08-29]
 
 broker:
-  server_timezone: Europe/Athens  # heure serveur MT5 (GMT+2/+3) — à vérifier chez FTMO
+  server_timezone: Europe/Athens  # heure serveur MT5 FTMO : UTC+3 l'été, UTC+2 l'hiver (vérifié)
+  point: 0.01                     # 1 point XAUUSD = 0,01 $ (le spread MT5 est en points)
+
+bridge:                   # report des niveaux GC sur le prix XAUUSD du broker
+  window: 60min           # médiane glissante du basis
+  min_obs: 20
+  max_noise: 1.0          # $ : au-delà, on ne se fie plus au report
 
 sessions:                 # heures de New York
   timezone: America/New_York

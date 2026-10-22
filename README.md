@@ -67,3 +67,15 @@ Contrôle visuel d'une journée (niveaux affichés + graphique dans `reports/`) 
 ```bash
 python -m xauof.indicators.check --date 2026-09-15
 ```
+
+## Passerelle GC → XAUUSD (phase 3)
+
+`bridge/basis.py` : basis = GC − XAUUSD (milieu bid/ask) minute par minute,
+référence = médiane glissante 60 min sur le passé, remise à zéro à chaque
+roulement. Un niveau GC se reporte par `niveau_xau = niveau_gc − basis`.
+Contrôle d'horloge : la corrélation des rendements 1 min doit être maximale
+sans décalage (sinon erreur de fuseau ou de changement d'heure).
+
+```bash
+python -m xauof.bridge.check --start 2025-10-01 --end 2026-10-01
+```
