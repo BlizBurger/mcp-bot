@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# rend le paquet xauof importable quand on lance simplement `pytest`
+pythonpath = ["."]
+testpaths = ["tests"]
