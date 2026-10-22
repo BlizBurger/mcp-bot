@@ -139,9 +139,9 @@ def chart(day, a: dict, path: Path) -> Path:
     axc.tick_params(colors=FG, labelsize=8)
     axd.set_ylabel("delta", color=FG, fontsize=8)
     axc.set_ylabel("CVD", color=ACCENT, fontsize=8)
-    step = max(1, len(bars) // 12)
-    axd.set_xticks(list(x)[::step])
-    axd.set_xticklabels([t.strftime("%H:%M") for t in local[::step]])
+    ticks = [i for i, t in enumerate(local) if t.minute == 0 and t.hour % 2 == 0]
+    axd.set_xticks(ticks)
+    axd.set_xticklabels([local[i].strftime("%H:%M") for i in ticks])
 
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=110, facecolor=BG, bbox_inches="tight")
