@@ -1,223 +1,33 @@
-# =========================================================================
-# Configuration centrale du SMC/AMD Scanner — TOUS les paramètres sont ici.
-# Les secrets (Telegram, identifiants MT5) vont dans .env, pas ici.
-# =========================================================================
+# XAUUSD OF — configuration centrale.
+# Règle : changer UNE option à la fois et la valider au walk-forward.
 
-# Univers retenu après le test in-sample/out-of-sample du 2026-07-12 :
-# majors + crosses JPY + EURGBP. Les crosses CHF/CAD/AUD (spreads lourds)
-# perdaient sur les deux segments — écartés. Une paire absente chez le
-# broker est ignorée avec un warning.
-pairs: [EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD,
-        EURJPY, GBPJPY, AUDJPY, CHFJPY, EURGBP]
+symbols:
+  broker: XAUUSD          # nom exact du symbole chez le broker MT5 (à vérifier)
+  futures: GC.v.0         # Databento : contrat GC continu, roulé sur le volume
+  dataset: GLBX.MDP3      # CME Globex
 
-# Stratégie active : amd_asian (v1) ou sweep_bos (v2)
-strategy_name: sweep_bos
+data:
+  dir: data               # stockage local Parquet (ignoré par git)
+  schema: trades          # transactions avec côté agresseur
 
-# Paramètres de la stratégie sweep_bos (v2 : sweep 4H + BOS M15 + scoring)
-sweep_bos:
-  liquidity_lookback_h4: 50   # bougies H4 pour construire les niveaux
-  swing_k_h4: 3               # swing H4 significatif : 3 bougies de chaque côté
-  equal_tolerance_pct: 0.05   # equal highs/lows : ±0.05% du prix
-  max_levels_per_side: 5      # niveaux gardés en mémoire de chaque côté
-  min_sweep_pips: 1.0         # dépassement minimal de la mèche (à calibrer)
-  min_wick_ratio: 0.6         # mèche de rejet >= 60% du range de la bougie
-  bos_window_m15: 20          # fenêtre max (bougies M15) pour le BOS, sinon expiré
-  bos_swing_k: 2              # pivot M15 : 2 bougies de chaque côté
-  sl_buffer_pct: 0.20         # buffer SL en % du prix — élargi après le test
-                              # IS/OOS (0.12 se faisait chasser par les mèches)
-  min_rr: 2.0                 # R:R minimum ; TP = liquidité opposée si >= min_rr
-  min_score: 0                # ne garder que les setups avec score >= N (0-6)
-  confluence_min_size_atr: 0.5   # un FVG/IFVG compte seulement si sa taille
-                                 # >= 0.5x l'ATR(14) M15 (anti-saturation du score)
-  entry_zone_kinds: [FVG, IFVG, Breaker]   # OB retiré après le test IS/OOS
-                                 # (les entrées OB perdaient sur les deux
-                                 # segments) ; le retest du BOS reste le repli
-  # --- Filtre de régime de marché (ADX sur H4). Hypothèse : sweep+BOS marche
-  # mieux quand le H4 est en tendance nette, pas dans le bruit d'un range.
-  # 0 = filtre DÉSACTIVÉ (comportement d'origine). Le walk-forward teste
-  # 20/25 + l'alignement directionnel UNIQUEMENT sur le train de chaque fenêtre.
-  regime_adx_min: 0            # ADX H4 minimum pour autoriser une entrée (0 = off)
-  regime_adx_period: 14
-  regime_align: false          # true = n'entrer que dans le sens du H4 (+DI/-DI)
-  # --- Bonus AMD : accumulation (compression ATR) -> manipulation confirmée
-  # juste avant le sweep. +1 point de score si la direction correspond.
-  # JAMAIS bloquant : aucun trade sweep+BOS n'attend ni n'exige l'AMD.
-  amd_enabled: true
-  amd_atr_mult: 1.0              # compression : range <= ATR(14) x mult.
-                                 # Calibration du 2026-07-12 : 0.5 = zéro détection ;
-                                 # aucun niveau (1/1.5/2) ne discrimine le PF.
-                                 # => informatif dans les alertes, PAS un filtre.
-  amd_window_min: 8              # fenêtre d'accumulation flexible (bougies)
-  amd_window_max: 25
-  amd_rejection_delay_bars: 10   # délai max du rejet après le dépassement (8-15)
-  amd_rejection_tolerance_pct: 10  # clôture tolérée à N% du range au-delà du niveau
-  amd_candidate_expiry_bars: 35  # candidat expiré sans progression (30-40)
-  amd_timeframes: [H4, H1, M30, M15]  # H1/M30 rééchantillonnés depuis le M15
+sessions:                 # heures de New York
+  timezone: America/New_York
+  rth: ["08:20", "13:30"] # séance régulière COMEX, là où le volume se concentre
+  tpo_period_min: 30
+  initial_balance_min: 60
 
-# --- Stratégies classiques (labo de comparaison) : entrée marché, SL en ATR,
-# R:R paramétrable. htf_filter = n'entrer que dans le sens de la tendance H4.
-ema_rsi:                       # pullback RSI dans la tendance EMA (momentum)
-  ema_fast: 21
-  ema_slow: 50
-  rsi_period: 14
-  rsi_buy: 50                  # RSI repasse au-dessus => long (en tendance haussière)
-  rsi_sell: 50
-  atr_sl_mult: 1.5
-  risk_reward: 2.0
-  htf_filter: true
-donchian:                      # cassure de canal type Turtle (suivi de tendance)
-  channel: 20
-  atr_sl_mult: 1.5
-  risk_reward: 2.0
-  htf_filter: false
-bollinger:                     # retour à la moyenne depuis une bande (contre-tendance)
-  period: 20
-  std: 2.0
-  atr_sl_mult: 1.5
-  risk_reward: 1.5
-  htf_filter: false
-ema_cross:                     # croisement de moyennes (référence de base)
-  ema_fast: 20
-  ema_slow: 50
-  atr_sl_mult: 1.5
-  risk_reward: 2.0
-  htf_filter: false
+profile:
+  value_area_pct: 0.70
+  tick_size: 0.10         # pas de prix GC
 
-timeframes:
-  htf: H4      # biais directionnel
-  ltf: M15     # détection des setups
-
-# Sessions exprimées en HEURE SERVEUR MT5 (vérifie le décalage de ton broker !)
-sessions:
-  asian: "00:00-07:00"
-  killzones:
-    london: "08:00-11:00"
-    newyork: "13:30-16:00"
-
-strategy:
-  risk_reward: 1.5            # TP = risque × ce ratio (tester 1.0 / 1.5 / 2.0 :
-                              # plus bas = win rate plus haut, gains plus petits)
-  sl_buffer_pips: 3.0         # buffer de sécurité derrière le niveau de sweep
-  min_risk_pips: 8.0          # risque minimum entrée->SL : en dessous, le setup
-                              # est rejeté (le spread mangerait tout le risque)
-  require_rejection_candle: true   # la bougie de retour en zone doit rejeter
-                                   # (corps dans le sens du trade, clôture dans
-                                   # la bonne moitié de sa range)
-  min_sweep_depth_pips: 3.0        # profondeur minimale du sweep au-delà du
-                                   # niveau balayé (0 = désactivé)
-  require_d1_alignment: true       # le biais Daily doit confirmer le biais H4
-  entry_at_zone_edge: true         # entrée en ORDRE LIMITE dans la zone au lieu
-                                   # du prix courant (meilleur prix moyen,
-                                   # certains setups ne seront jamais remplis)
-  entry_zone_depth: 0.5            # 0 = bord proximal de la zone, 0.5 = milieu,
-                                   # 1 = bord distal (plus profond = meilleur
-                                   # prix, moins de remplissages)
-  fvg_min_pips: 2.0           # taille minimale d'un FVG
-  equal_level_tolerance_pips: 2.0   # tolérance equal highs/lows (arbitraire — risque d'overfitting)
-  volume_mult: 1.2            # tick_volume bougie impulsive >= 1.2x sa MM20
-  volume_period: 20
-  correlation_threshold: 0.6  # au-delà : paire corrélée avec biais opposé => setup ignoré
-  correlation_window: 50      # en bougies
-  swing_k: 2                  # bougies de chaque côté pour valider un swing
-  ob_lookback: 10             # profondeur de cassure de structure pour un OB
-  liquidity_lookback: 120     # bougies LTF scannées pour les equal highs/lows
-
-exits:
-  breakeven_after_r: 1.0      # SL remonté à l'entrée quand le trade atteint
-                              # +1R (0 = désactivé)
-  partial_at_r: 1.0           # prise partielle : encaisser une fraction de la
-                              # position à +N R (0 = désactivé)
-  partial_fraction: 0.5       # fraction encaissée à la prise partielle
-  max_holding_bars: 96        # sortie forcée au prix courant après N bougies
-                              # LTF (96 x M15 ≈ 1 jour ; 192 ≈ 2 jours ;
-                              # 0 = désactivé)
-
-# Heures de marché forex (en HEURE SERVEUR MT5). Le forex ne ferme qu'une
-# fois par semaine (vendredi soir) — pas de "fermeture Tokyo/NY" par paire.
-market_hours:
-  week_close_friday: "23:55"        # clôture hebdo du broker (vendredi, heure serveur)
-  force_close_minutes_before: 30    # clôture forcée des positions avant la clôture
-                                    # hebdo (backtest : simulée ; live : rappel Telegram)
-  week_open_blackout_minutes: 60    # aucune entrée dans l'heure suivant l'ouverture
-                                    # hebdo (lundi 00:00 serveur)
-  rollover_blackout: "23:00-00:15"  # aucune entrée pendant le rollover quotidien
-                                    # (spreads erratiques ; "" = désactivé)
-
-calendar:
-  skip_friday_after: "12:00"  # aucun nouveau setup le vendredi après cette
-                              # heure SERVEUR ("" = désactivé)
-  skip_dates:                 # jours morts/fériés évités (format MM-JJ)
-    - "12-24"
-    - "12-25"
-    - "12-26"
-    - "12-31"
-    - "01-01"
-    - "01-02"
-
-scanner:
-  interval_seconds: 300       # scan toutes les 5 minutes
-  history_bars_ltf: 300       # bougies M15 chargées à chaque scan
-  history_bars_htf: 120       # bougies H4 chargées à chaque scan
-  history_bars_d1: 60         # bougies Daily (pour require_d1_alignment)
-  alert_chart: true           # joindre une image annotée du setup à l'alerte
-                              # Telegram (bougies + sweep + zone + entrée/SL/TP)
-  max_telegram_alerts_per_day: 0   # nombre max d'alertes Telegram par jour.
-                                   # 0 = ILLIMITÉ (tous les setups sont alertés).
-                                   # Mettre 1 pour la règle FTMO stricte 1 trade/jour.
-                                   # (anti-doublon : 1 alerte max par paire et par jour)
-
-# Compte — sert UNIQUEMENT à calculer la taille de position affichée dans
-# l'alerte. Le bot n'exécute jamais l'ordre : tu passes la position à la main.
-account:
-  balance: 10000              # solde du compte
-  currency: "EUR"             # devise du compte (affichage)
-  risk_pct: 1.0               # % du solde risqué par trade
+risk:                     # garde-fous calés sous les limites FTMO 2-Step
+  risk_per_trade_pct: 0.5
+  max_daily_loss_pct: 3.0 # FTMO : 5 % — on coupe bien avant
+  max_total_loss_pct: 8.0 # FTMO : 10 %
+  max_trades_per_day: 3
 
 news:
-  file: news_today.txt
-  blackout_minutes: 30        # avant/après toute news High impact
-
-paths:
-  db: data/alerts.db
-  logs: logs
-  status: data/scanner_status.json
-  reports: reports
-
-backtest:
-  days: 60                    # profondeur d'historique par défaut
-  max_trades_per_day: 0       # 0 = ILLIMITÉ (mesurer la fréquence réelle) ;
-                              # 1 = règle FTMO. Doit refléter le réglage live.
-  charts: true                # génère Backtest/<date>/ : 1 image par trade,
-                              # courbe d'équité, rapport, CSV
-  zone_fill_timeout_bars: 16  # bougies max pour que le prix revienne dans la zone
-  # Spread modélisé (en pips, coût déduit de chaque trade). Valeurs FTMO
-  # approximatives en conditions calmes — le spread réel s'élargit sur les news.
-  spread_pips:
-    default: 1.5
-    EURUSD: 0.8
-    GBPUSD: 1.0
-    USDJPY: 1.0
-    USDCHF: 1.1
-    USDCAD: 1.2
-    AUDUSD: 0.9
-    NZDUSD: 1.3
-    EURJPY: 1.6
-    GBPJPY: 2.2
-    AUDJPY: 1.5
-    NZDJPY: 1.8
-    CADJPY: 1.7
-    CHFJPY: 1.8
-    EURGBP: 1.2
-    EURCHF: 1.6
-    EURAUD: 2.0
-    EURCAD: 2.0
-    GBPCHF: 2.2
-    GBPAUD: 2.5
-    AUDCHF: 1.5
-    AUDCAD: 1.6
-
-# Taille de pip par paire (fallback si MT5 indisponible, p.ex. pour le backtest
-# des tests). Avec MT5 connecté, la valeur du broker fait foi.
-pip_sizes:
-  default: 0.0001
-  jpy_quote: 0.01
+  blackout_before_min: 15 # FTMO funded : interdit ±2 min, on prend de la marge
+  blackout_after_min: 15
+  flatten_before_high_impact: true
+  currencies: [USD]
