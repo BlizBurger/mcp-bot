@@ -158,3 +158,16 @@ def test_funnel_report_runs(market, tmp_path):
     assert not [r for r in eng.journal if r["type"] == "zone" and r["state"] == "eligible"]
     motifs = [m for r in eng.journal if r["type"] == "contact_refuse" for m in r["motifs"]]
     assert not any(m == "aucun scénario compatible (sens ou retest de la borne cassée)" for m in motifs)
+
+
+def test_breakout_bound_retest_is_optional(market):
+    cfg, data = market
+    strict = copy.deepcopy(cfg)
+    strict["strategy"]["breakout"]["require_bound_retest"] = True
+    loose = copy.deepcopy(cfg)
+    loose["strategy"]["breakout"]["require_bound_retest"] = False
+    far = "aucun scénario compatible : cassure active mais zone loin de la borne cassée"
+    motifs = lambda eng: [m for r in eng.journal if r["type"] == "contact_refuse" for m in r["motifs"]]  # noqa: E731
+    assert far not in motifs(run(loose, data, "A"))
+    elig = lambda eng: sum(r["type"] == "contact_eligible" for r in eng.journal)  # noqa: E731
+    assert elig(run(loose, data, "A")) >= elig(run(strict, data, "A"))

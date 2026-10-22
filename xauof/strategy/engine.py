@@ -309,7 +309,8 @@ class Engine:
             for st in actifs:
                 if st.direction != z.direction:
                     continue
-                if st.name == "breakout" and z.distance(st.bound) > tol:
+                if (st.name == "breakout" and self.s["breakout"]["require_bound_retest"]
+                        and z.distance(st.bound) > tol):
                     continue
                 scenario = st
                 break

@@ -41,16 +41,17 @@ avec les sorties `rejected` (taille), `duplicate`, `consumed` (contact sans trad
      dans le sens du trade.
    - *Cassure acceptée* (approximation, pas une preuve) : 2 clôtures M5 au-delà
      de la même borne, avec un volume GC de la paire ≥ médiane des 20 paires
-     précédentes. On attend ensuite le retest d'une zone compatible proche de la
-     borne cassée. Le scénario se désactive au retour d'une clôture dans la VA.
+     précédentes. Toute zone fraîche dans le sens de la cassure est alors
+     tradable (continuation ; `breakout.require_bound_retest` pour exiger le
+     retest de la borne). Le scénario se désactive au retour d'une clôture dans la VA.
      Son objectif de référence est le **mouvement mesuré** : borne cassée ± hauteur
      de la VA précédente, sauf obstacle connu plus proche.
 4. **Confluences** (variantes B, C). Un niveau est « proche » si sa distance au
-   range de la zone est ≤ 0,5 ATR M5, après projection GC→XAUUSD. La même distance
-   sert au retest de la borne cassée. Il y a 1 point
-   par famille, au plus : rejet (LVN, single prints), bornes de valeur (VAH/VAL
-   volume ou TPO), IB (connue à partir de 09:20). Il faut au moins 2 familles. Le
-   POC ne rapporte aucun point.
+   range de la zone est ≤ 0,5 ATR M5, après projection GC→XAUUSD (même distance
+   pour le retest de la borne, s'il est exigé). Il y a 1 point par famille, au
+   plus : rejet (LVN, single prints), bornes de valeur (VAH/VAL volume ou TPO), IB
+   (connue à partir de 09:20). Il faut au moins 1 famille (`min_score_families`).
+   Le POC ne rapporte aucun point.
 5. **Déclencheur** : dans les 3 bougies M1 clôturées après le contact.
    - A, B : clôture M1 au-delà du high (achat) ou du low (vente) précédent.
    - C : en plus, delta GC précédent < 0 et delta courant > 0 (achat), et l'inverse
@@ -127,6 +128,8 @@ En live, `python -m xauof.news.calendar --import-ff` importe la semaine en cours
 | 2026-10-23 | cassure : objectif mouvement mesuré | aucun objectif n'existait dans le sens d'une cassure (13 refus, R:R de 0,02 à 0,19) |
 | 2026-10-23 | `near_atr` 0,15 → 0,5 | 441 contacts refusés « zone loin de la borne » ; 0,15 ATR ≈ 0,30-0,50 $ |
 | 2026-10-23 | validité du retour vers la valeur 30 → 60 min | hypothèse initiale non spécifiée |
+| 2026-10-23 | cassure : toute zone fraîche dans le sens (plus seulement le retest de la borne) | 423 contacts refusés « zone loin de la borne » même à 0,5 ATR ; logique de continuation |
+| 2026-10-23 | score minimum 2 → 1 famille (B, C) | ~1 000 contacts sur 1 131 bloqués : B et C ne pouvaient pas être évaluées |
 
 Ces décisions s'appuient sur l'entonnoir in-sample (oct. 2025 → juin 2026), pas sur
 le PnL. La règle « le premier contact consomme la zone » est conservée.

@@ -119,7 +119,7 @@ strategy:
   # 0.15 → 0.5 le 2026-10-23, décidé sur l'entonnoir in-sample (441 contacts refusés
   # « zone loin de la borne », 0.15 ATR ≈ 0,30-0,50 $), PAS sur le PnL.
   near_atr: 0.5
-  min_score_families: 2           # variantes B et C
+  min_score_families: 1           # variantes B et C (2 → 1 le 2026-10-23 : 2 familles bloquaient ~90 % des contacts)
   sl_margin_atr: 0.1              # marge SL = max(spread, 0.1 ATR)
   min_rr_net: 1.5
   value_area_source: volume       # VA utilisée par les scénarios : volume | tpo
@@ -131,6 +131,9 @@ strategy:
     # objectif : mouvement mesuré = borne cassée ± hauteur de la VA précédente, sauf
     # obstacle connu plus proche (ajouté le 2026-10-23 : sans lui, aucun objectif
     # n'existait dans le sens d'une cassure)
+    # false (2026-10-23) : toute zone fraîche dans le sens de la cassure est un repli
+    # tradable (continuation) ; true : seulement le retest de la borne cassée.
+    require_bound_retest: false
   trigger:
     max_m1_bars: 3                # délai de confirmation après le contact
     absorption_enabled: false     # variante séparée, désactivée par défaut
