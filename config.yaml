@@ -142,9 +142,12 @@ news:
   flatten_before_min: 15
   flatten_kinds: [NFP, CPI, FOMC]
   currencies: [USD]
-  # block : aucun trade un jour sans calendrier (défaut, obligatoire en live).
+  # block : aucun trade un jour sans calendrier (OBLIGATOIRE en live et pour tout
+  #         résultat qui compte).
   # ignore_backtest_only : backtest SANS filtre news, rapport marqué non représentatif.
-  missing_calendar: block
+  # TEMPORAIRE : exploration sans calendrier historique. Remettre « block » dès que
+  # data/calendar/ contient les annonces USD de la période testée.
+  missing_calendar: ignore_backtest_only
 
 validation:
   holdout_start: 2026-07-01       # période réservée hors échantillon : ne pas régler dessus
