@@ -37,3 +37,17 @@ pip install -r requirements.txt
 cp .env.example .env    # puis remplir DATABENTO_API_KEY, MT5_*, TELEGRAM_*
 pytest
 ```
+
+## Données (phase 1)
+
+```bash
+# Or COMEX (GC) via Databento — TOUJOURS estimer d'abord, rien n'est dépensé
+python -m xauof.data.gc --start 2025-10-01 --dry-run
+python -m xauof.data.gc --start 2025-10-01            # refuse si > data.max_cost_usd
+
+# XAUUSD M1 depuis MT5 (terminal ouvert et connecté)
+python -m xauof.data.xauusd --start 2025-10-01
+```
+
+Les fichiers sont rangés par mois dans `data/` (jamais envoyés sur GitHub).
+Un mois complet déjà téléchargé n'est jamais re-payé.

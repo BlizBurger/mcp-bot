@@ -9,6 +9,10 @@ symbols:
 data:
   dir: data               # stockage local Parquet (ignoré par git)
   schema: trades          # transactions avec côté agresseur
+  max_cost_usd: 10        # plafond Databento par lancement (refus si dépassé)
+
+broker:
+  server_timezone: Europe/Athens  # heure serveur MT5 (GMT+2/+3) — à vérifier chez FTMO
 
 sessions:                 # heures de New York
   timezone: America/New_York

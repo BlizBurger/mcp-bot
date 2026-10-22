@@ -4,8 +4,8 @@ Règle d'or : **on prouve avant de payer, on alerte avant d'exécuter.**
 
 | # | Phase | Contenu | Coût |
 |---|-------|---------|------|
-| 0 | Reset + squelette | Structure, config, tests | 0 € |
-| 1 | Données | Historique GC `trades` (Databento, crédits gratuits), XAUUSD M1 (MT5), roulements, Parquet | 0 € |
+| 0 ✅ | Reset + squelette | Structure, config, tests | 0 € |
+| 1 🔧 | Données | Historique GC `trades` (Databento, crédits gratuits), XAUUSD M1 (MT5), roulements, Parquet | 0 € |
 | 2 | Indicateurs | Volume profile, TPO, order flow, FVG / OB | 0 € |
 | 3 | Passerelle | Basis GC → XAUUSD, garde-fous | 0 € |
 | 4 | Stratégie + **bases de l'interface** | Score de confluence ; API locale + dashboard (lecture backtests, graphiques) | 0 € |
