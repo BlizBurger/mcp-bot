@@ -51,3 +51,19 @@ python -m xauof.data.xauusd --start 2025-10-01
 
 Les fichiers sont rangés par mois dans `data/` (jamais envoyés sur GitHub).
 Un mois complet déjà téléchargé n'est jamais re-payé.
+
+## Indicateurs (phase 2)
+
+| Module | Contenu |
+|---|---|
+| `indicators/sessions.py` | journée CME (18:00 → 17:00 New York), séance RTH, contrat actif |
+| `indicators/volume_profile.py` | POC, Value Area (VAH / VAL), HVN, LVN |
+| `indicators/tpo.py` | Market Profile : POC / VA en temps, Initial Balance, single prints, queues, poor high / low |
+| `indicators/orderflow.py` | delta, CVD, footprint + déséquilibres, absorption, grosses transactions, divergence CVD |
+| `indicators/smc.py` | FVG et Order Blocks bullish / bearish, suivi retour en zone / invalidation |
+
+Contrôle visuel d'une journée (niveaux affichés + graphique dans `reports/`) :
+
+```bash
+python -m xauof.indicators.check --date 2026-09-15
+```

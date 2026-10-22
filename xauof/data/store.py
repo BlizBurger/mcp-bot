@@ -58,12 +58,12 @@ def save(df: pd.DataFrame, path: Path) -> None:
     df.to_parquet(path)
 
 
-def load_range(directory: Path, start, end) -> pd.DataFrame:
+def load_range(directory: Path, start, end, index_name: str = "ts_event") -> pd.DataFrame:
     """Concatène les fichiers mensuels couvrant [start, end) et découpe."""
     start, end = utc(start), utc(end)
     months = pd.date_range(start.normalize().replace(day=1), end, freq="MS")
-    frames = [pd.read_parquet(p) for m in months if (p := month_file(directory, m)).exists()]
+    flt = [(index_name, ">=", start), (index_name, "<", end)]
+    frames = [pd.read_parquet(p, filters=flt) for m in months if (p := month_file(directory, m)).exists()]
     if not frames:
         raise FileNotFoundError(f"aucune donnée dans {directory} pour {start:%Y-%m-%d} → {end:%Y-%m-%d}")
-    df = pd.concat(frames).sort_index()
-    return df[(df.index >= start) & (df.index < end)]
+    return pd.concat(frames).sort_index()

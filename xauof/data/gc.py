@@ -10,6 +10,7 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import warnings
 
 import pandas as pd
 
@@ -94,6 +95,9 @@ def main() -> None:
     args = p.parse_args()
 
     import databento as db
+
+    # bruit interne à databento avec pandas récent, sans effet sur les données
+    warnings.filterwarnings("ignore", message=".*inplace keyword.*")
 
     end = args.end or pd.Timestamp.now(tz="UTC").normalize()
     client = db.Historical(secret("DATABENTO_API_KEY"))

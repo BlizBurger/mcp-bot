@@ -10,6 +10,9 @@ data:
   dir: data               # stockage local Parquet (ignoré par git)
   schema: trades          # transactions avec côté agresseur
   max_cost_usd: 10        # plafond Databento par lancement (refus si dépassé)
+  # journées signalées « degraded » par Databento : exclues du backtest
+  exclude_days: [2025-11-28, 2026-01-31, 2026-03-15, 2026-03-16, 2026-03-21,
+                 2026-04-10, 2026-05-24, 2026-08-29]
 
 broker:
   server_timezone: Europe/Athens  # heure serveur MT5 (GMT+2/+3) — à vérifier chez FTMO
@@ -23,6 +26,24 @@ sessions:                 # heures de New York
 profile:
   value_area_pct: 0.70
   tick_size: 0.10         # pas de prix GC
+  bin_size: 0.50          # regroupement des niveaux (volume profile, TPO)
+  hvn_smooth: 5           # lissage (en niveaux) avant détection HVN / LVN
+  lvn_ratio: 0.5          # LVN < 50 % du plus petit des deux HVN voisins
+
+orderflow:
+  bar: 5min
+  footprint_bin: 0.50
+  imbalance_ratio: 3.0
+  imbalance_min_volume: 10
+  absorption:
+    lookback: 20
+    vol_mult: 1.5
+    delta_frac: 0.15
+    max_move_atr: 0.3
+
+smc:
+  fvg_min_size: 0.5       # $ : ignore les micro-FVG
+  ob_displacement_atr: 1.5
 
 risk:                     # garde-fous calés sous les limites FTMO 2-Step
   risk_per_trade_pct: 0.5
