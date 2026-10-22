@@ -91,3 +91,5 @@ python -m xauof.strategy.run --start 2025-10-06 --end 2026-07-01 --variant A   #
 ```
 
 La période réservée (`validation.holdout_start`) est refusée sans `--holdout`.
+Analyse de l'entonnoir (où et pourquoi les zones sont abandonnées) :
+`python -m xauof.strategy.funnel reports/strategy_A_2025-10-06_2026-07-01`

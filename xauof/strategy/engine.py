@@ -218,6 +218,8 @@ class Engine:
         spread_price = bar["spread"] * self.inst.point
         for z in self.detector.on_m5_close(m5, spread_price):
             self.book.add(z)
+            if self.expired and z.state == "eligible":
+                z.set(close_t, "expired", "détectée après la fin de la fenêtre d'entrée")
         if self.scen is not None:
             self.scen.on_m5_close(m5, self.gc_vol_m5)
         if self.ib is None and close_t >= self.ib_end:
@@ -301,9 +303,10 @@ class Engine:
         why = self._guards(s, float(self.d.xau["spread"].iloc[j]))
         if self.pending is not None and "une position est déjà ouverte" not in why:
             why.append("un ordre est déjà en attente")
-        scenario = None
+        scenario, actifs = None, []
         if lv is not None and self.scen is not None and not np.isnan(tol):
-            for st in self.scen.active(s):
+            actifs = self.scen.active(s)
+            for st in actifs:
                 if st.direction != z.direction:
                     continue
                 if st.name == "breakout" and z.distance(st.bound) > tol:
@@ -311,12 +314,19 @@ class Engine:
                 scenario = st
                 break
             if scenario is None:
-                why.append("aucun scénario compatible (sens ou retest de la borne cassée)")
+                if not actifs:
+                    why.append("aucun scénario compatible : aucun scénario actif")
+                elif all(st.direction != z.direction for st in actifs):
+                    why.append("aucun scénario compatible : scénario actif dans l'autre sens")
+                else:
+                    why.append("aucun scénario compatible : cassure active mais zone loin de la borne cassée")
         basis, _ = self._basis_now(s)
         sc = ctx.score(z, lv, self._ib_xau(s, basis), tol) if lv is not None and not np.isnan(tol) else None
         if self.v["score"] and sc is not None and sc["score"] < self.s["min_score_families"]:
             why.append(f"score {sc['score']}/3 < {self.s['min_score_families']} familles")
-        info |= {"scenario": scenario.name if scenario else None,
+        info |= {"scenarios_actifs": [{"nom": st.name, "sens": st.direction, "borne": st.bound,
+                                       "distance_zone": z.distance(st.bound)} for st in actifs],
+                 "scenario": scenario.name if scenario else None,
                  "scenario_info": scenario.info if scenario else None,
                  "score": sc, "atr_m5": self.atr_now, "tol_proche": tol,
                  "basis": basis, "ib_xau": self._ib_xau(s, basis), "donnees": self._data_stamp(s)}

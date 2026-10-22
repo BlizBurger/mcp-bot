@@ -146,3 +146,15 @@ def test_journal_records_data_availability(market):
     rec = next(r for r in eng.journal if r["type"] == "entree")
     assert pd.Timestamp(rec["donnees"]["derniere_gc"]) < pd.Timestamp(rec["donnees"]["decision"])
     assert {"lots", "sl", "tp", "rr_net", "reste_jour", "reste_total", "spread_pts"} <= rec.keys()
+
+
+def test_funnel_report_runs(market, tmp_path):
+    from xauof.strategy import funnel
+
+    cfg, data = market
+    eng = run(cfg, data, "A")
+    text = funnel.funnel(eng.journal)
+    assert "Zones détectées" in text and "Premiers contacts" in text
+    assert not [r for r in eng.journal if r["type"] == "zone" and r["state"] == "eligible"]
+    motifs = [m for r in eng.journal if r["type"] == "contact_refuse" for m in r["motifs"]]
+    assert not any(m == "aucun scénario compatible (sens ou retest de la borne cassée)" for m in motifs)
