@@ -101,6 +101,15 @@ def main() -> None:
         fetch(cfg, client, args.start, end, args.max_cost, args.dry_run)
     except CostLimitExceeded as e:
         raise SystemExit(f"STOP : {e}")
+    except db.BentoClientError as e:
+        if e.http_status == 402:
+            raise SystemExit(
+                "STOP : Databento refuse la requête (402, budget insuffisant). "
+                "La limite de dépense du compte (Billing → Usage-based access → Manage) "
+                "est plus basse que le coût estimé : relève-la au-dessus de ce coût. "
+                "Les mois déjà enregistrés sont conservés."
+            )
+        raise
 
 
 if __name__ == "__main__":
