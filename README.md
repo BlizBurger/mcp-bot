@@ -22,7 +22,7 @@ xauof/
 ├── data/        Databento (GC) + MT5 (XAUUSD), Parquet
 ├── indicators/  volume profile, TPO, order flow, FVG / OB
 ├── bridge/      basis GC → XAUUSD
-├── strategy/    score de confluence, entrées / sorties
+├── strategy/    zones, scénarios, confluences, déclencheur, risque, moteur
 ├── backtest/    simulation + walk-forward
 ├── news/        calendrier économique, blackouts
 ├── live/        temps réel, Telegram, exécution, garde-fous FTMO
@@ -79,3 +79,15 @@ sans décalage (sinon erreur de fuseau ou de changement d'heure).
 ```bash
 python -m xauof.bridge.check --start 2025-10-01 --end 2026-10-01
 ```
+
+## Moteur de stratégie (phase 4)
+
+Règles complètes, hypothèses et limites : [STRATEGY.md](STRATEGY.md).
+Simulation uniquement : aucun ordre réel n'est passé.
+
+```bash
+python -m xauof.data.symbol_spec          # spécifications XAUUSD réelles (MT5 ouvert)
+python -m xauof.strategy.run --start 2025-10-06 --end 2026-07-01 --variant A   # B, C
+```
+
+La période réservée (`validation.holdout_start`) est refusée sans `--holdout`.

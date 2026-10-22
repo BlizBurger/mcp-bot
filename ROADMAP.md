@@ -8,7 +8,7 @@ Règle d'or : **on prouve avant de payer, on alerte avant d'exécuter.**
 | 1 ✅ | Données | Historique GC `trades` (Databento, crédits gratuits), XAUUSD M1 (MT5), roulements, Parquet | 0 € |
 | 2 ✅ | Indicateurs | Volume profile, TPO, order flow, FVG / OB | 0 € |
 | 3 ✅ | Passerelle | Basis GC → XAUUSD, garde-fous | 0 € |
-| 4 | Stratégie + **bases de l'interface** | Score de confluence ; API locale + dashboard (lecture backtests, graphiques) | 0 € |
+| 4 🔧 | Stratégie + **bases de l'interface** | Score de confluence ; API locale + dashboard (lecture backtests, graphiques) | 0 € |
 | 5 | Backtest + walk-forward + **interface v1** | Comparaison A (FVG/OB) / B (+profil) / C (+order flow) ; résultats dans l'interface | 0 € |
 | 6 | Live : FTMO Challenge 10k (2-Step) | Flux GC temps réel, exécution MT5, news, interface hébergée et sécurisée (fermeture des trades) | Databento ~199 $/mois + VPS + challenge |
 | 7 | Passage 100k | Uniquement après preuve sur le 10k | challenge 100k |

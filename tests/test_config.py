@@ -11,9 +11,10 @@ def test_config_loads():
     cfg = load_config()
     assert cfg["symbols"]["broker"] == "XAUUSD"
     assert 0 < cfg["profile"]["value_area_pct"] < 1
-    # les garde-fous doivent rester sous les limites FTMO 2-Step (5 % / 10 %)
-    assert cfg["risk"]["max_daily_loss_pct"] < 5
-    assert cfg["risk"]["max_total_loss_pct"] < 10
+    # les garde-fous internes doivent rester sous les limites FTMO 2-Step
+    assert cfg["risk"]["daily_stop_usd"] < cfg["ftmo"]["daily_loss_limit_usd"]
+    assert cfg["risk"]["total_floor_margin_usd"] > 0
+    assert cfg["risk"]["risk_per_trade_pct"] * cfg["account"]["initial_capital"] / 100 == 50
 
 
 @pytest.mark.parametrize("name", SUBPACKAGES)

@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import pytest
 
 from xauof.indicators import orderflow, sessions, smc, tpo, volume_profile as vp
 

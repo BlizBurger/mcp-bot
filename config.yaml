@@ -10,7 +10,8 @@ data:
   dir: data               # stockage local Parquet (ignoré par git)
   schema: trades          # transactions avec côté agresseur
   max_cost_usd: 10        # plafond Databento par lancement (refus si dépassé)
-  # journées signalées « degraded » par Databento : exclues du backtest
+  # journées signalées « degraded » par Databento. INFORMATIF : le moteur ne s'en
+  # sert pas (information connue après coup) ; à utiliser seulement pour l'analyse.
   exclude_days: [2025-11-28, 2026-01-31, 2026-03-15, 2026-03-16, 2026-03-21,
                  2026-04-10, 2026-05-24, 2026-08-29]
 
@@ -54,14 +55,96 @@ smc:
   fvg_min_size: 0.5       # $ : ignore les micro-FVG
   ob_displacement_atr: 1.5
 
-risk:                     # garde-fous calés sous les limites FTMO 2-Step
-  risk_per_trade_pct: 0.5
-  max_daily_loss_pct: 3.0 # FTMO : 5 % — on coupe bien avant
-  max_total_loss_pct: 8.0 # FTMO : 10 %
-  max_trades_per_day: 3
+# ---------------------------------------------------------------------------
+# PHASE 4 — stratégie. Toutes ces valeurs sont des HYPOTHÈSES INITIALES à
+# tester, pas des paramètres optimisés. Ne pas les régler sur la période
+# réservée (validation.holdout_start).
+# ---------------------------------------------------------------------------
+
+account:
+  initial_capital: 10000          # USD — FTMO CFD 2-Step 10k
+  currency: USD
+
+risk:
+  risk_per_trade_pct: 0.5         # % de min(equity, capital initial), frais estimés compris
+  max_positions: 1
+  max_entries_per_day: 3          # entrées exécutées par journée de trading
+  daily_stop_usd: 150             # arrêt interne : réalisé + flottant + frais, vs solde à minuit Prague
+  daily_reset_timezone: Europe/Prague
+  total_floor_margin_usd: 200     # marge interne au-dessus du plancher FTMO (9 000 → arrêt à 9 200)
+  spread_filter_mult: 2.0         # bloque si spread > 2 × médiane des 60 dernières minutes
+  spread_filter_window_min: 60
+  spread_filter_min_obs: 60       # historique insuffisant = pas d'entrée
+
+ftmo:                             # profil FTMO 2-Step (à vérifier dans les conditions du compte)
+  # Source : pages « Trading Objectives » FTMO + synthèses 2026 (propfirmexperts.com,
+  # stonkjournal.com). À confirmer dans le contrat et le Client Area du compte.
+  daily_loss_limit_usd: 500       # 5 % du capital initial, vs solde à minuit CE(S)T
+  max_loss_usd: 1000              # 10 % : plancher d'equity 9 000 USD
+  reset_timezone: Europe/Prague
+
+costs:
+  # Coûts ESTIMÉS. Commission FTMO métaux non vérifiée : ouvrir 0,01 lot en démo et
+  # lire la commission dans l'historique MT5, puis corriger ici.
+  commission_per_lot_round_trip: 6.0   # USD par lot aller-retour (hypothèse prudente)
+  slippage_price: 0.10                  # $ par once, appliqué aux ordres au marché et aux stops
+
+instrument:                       # XAUUSD — remplacé par data/xauusd/spec.json si présent
+  # (créé par : python -m xauof.data.symbol_spec, MT5 ouvert)
+  contract_size: 100              # onces par lot
+  tick_size: 0.01
+  tick_value: 1.0                 # USD par tick et par lot
+  volume_min: 0.01
+  volume_step: 0.01
+  volume_max: 100
+  profit_currency: USD
+
+strategy:
+  timezone: America/New_York
+  entry_start: "08:20"            # entrées autorisées (heure d'exécution)
+  entry_end: "13:15"
+  flat_time: "13:30"              # clôture des positions et annulation des ordres
+  london_enabled: false           # réservé ; non implémenté en V1
+  warmup_start: "04:00"           # historique pré-séance pour ATR, pivots, spread, volumes
+  zone_tf: 5min
+  atr_period: 14
+  fvg_min_spreads: 2              # taille min FVG = max(2 spreads, 0.1 ATR)
+  fvg_min_atr: 0.1
+  fvg_max_atr: 1.0
+  pivot_left: 2
+  pivot_right: 2
+  ob_body_atr: 1.0                # corps de la bougie de cassure >= 1 ATR (ATR avant la bougie)
+  ob_lookback: 5                  # recherche de la dernière bougie opposée
+  near_atr: 0.15                  # « proche » : distance niveau ↔ zone <= 0.15 ATR M5
+  min_score_families: 2           # variantes B et C
+  sl_margin_atr: 0.1              # marge SL = max(spread, 0.1 ATR)
+  min_rr_net: 1.5
+  value_area_source: volume       # VA utilisée par les scénarios : volume | tpo
+  value_return:
+    reentry_within_m5: 3          # clôture de retour dans les 3 bougies M5 suivantes
+    setup_valid_m5: 6             # HYPOTHÈSE : durée de vie du setup après le retour (30 min)
+  breakout:
+    volume_pairs: 20              # médiane des volumes cumulés des 20 paires précédentes
+  trigger:
+    max_m1_bars: 3                # délai de confirmation après le contact
+    absorption_enabled: false     # variante séparée, désactivée par défaut
+  data_guards:
+    max_gc_staleness_min: 2       # dernière bougie GC trop ancienne → pas d'entrée
+    max_unclassified_share: 0.05  # part du volume GC sans côté agresseur tolérée (delta)
+    hvn_zone_frac: 0.7            # une HVN = niveaux autour du pic >= 70 % du pic
 
 news:
-  blackout_before_min: 15 # FTMO funded : interdit ±2 min, on prend de la marge
+  # Protections INTERNES (distinctes des règles contractuelles FTMO, qui dépendent
+  # du programme et de la phase : ex. compte financé Standard = ±2 min).
+  calendar_dir: data/calendar     # usd_events.csv + coverage.csv (voir README)
+  blackout_before_min: 15
   blackout_after_min: 15
-  flatten_before_high_impact: true
+  flatten_before_min: 15
+  flatten_kinds: [NFP, CPI, FOMC]
   currencies: [USD]
+  # block : aucun trade un jour sans calendrier (défaut, obligatoire en live).
+  # ignore_backtest_only : backtest SANS filtre news, rapport marqué non représentatif.
+  missing_calendar: block
+
+validation:
+  holdout_start: 2026-07-01       # période réservée hors échantillon : ne pas régler dessus

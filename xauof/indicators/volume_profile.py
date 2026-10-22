@@ -64,6 +64,31 @@ def nodes(profile: pd.Series, smooth: int = 5, lvn_ratio: float = 0.5) -> tuple[
     return [float(prices[i]) for i in peaks], lvn
 
 
+def hvn_zones(profile: pd.Series, smooth: int = 5, frac: float = 0.7) -> list[tuple[float, float]]:
+    """HVN sous forme de zones (bas, haut) : niveaux contigus autour de chaque pic
+    du profil lissé dont le volume lissé reste >= frac × le pic."""
+    v = _smooth(profile.to_numpy(), smooth)
+    prices = profile.index.to_numpy()
+    med = np.median(v)
+    zones = []
+    for i in range(1, len(v) - 1):
+        if not (v[i] >= v[i - 1] and v[i] > v[i + 1] and v[i] > med):
+            continue
+        lo = hi = i
+        while lo > 0 and v[lo - 1] >= frac * v[i]:
+            lo -= 1
+        while hi < len(v) - 1 and v[hi + 1] >= frac * v[i]:
+            hi += 1
+        zones.append((float(prices[lo]), float(prices[hi])))
+    merged: list[tuple[float, float]] = []
+    for z in sorted(zones):
+        if merged and z[0] <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], z[1]))
+        else:
+            merged.append(z)
+    return merged
+
+
 @dataclass
 class Profile:
     profile: pd.Series
