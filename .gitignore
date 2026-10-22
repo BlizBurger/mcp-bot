@@ -1,9 +1,13 @@
+# Secrets
 .env
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
-logs/
-data/
-reports/
-Backtest/
-news_today.txt
+.venv/
+
+# Données et sorties locales (racine uniquement : xauof/data/ est du code)
+/data/
+/logs/
+/reports/

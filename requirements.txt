@@ -1,16 +1,15 @@
-# Scanner + backtest (Windows requis pour le package MetaTrader5)
-MetaTrader5>=5.0.45 ; sys_platform == "win32"
-pandas>=2.0
-numpy>=1.24
+pandas>=2.2
+numpy>=1.26
+pyarrow>=15.0
 PyYAML>=6.0
-requests>=2.31
 python-dotenv>=1.0
+requests>=2.31
 
-# Dashboard
-streamlit>=1.30
+# Données futures CME (phase 1)
+databento>=0.40
 
-# Images de trades / courbe d'équité (dossier Backtest/)
-matplotlib>=3.8
+# Prix XAUUSD + exécution (Windows, ou Wine sur le serveur Linux)
+MetaTrader5>=5.0.45 ; sys_platform == "win32"
 
 # Tests
-pytest>=7.4
+pytest>=8.0
