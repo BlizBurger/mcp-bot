@@ -144,7 +144,12 @@ def chart(day, a: dict, path: Path) -> Path:
     axd.set_xticklabels([local[i].strftime("%H:%M") for i in ticks])
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=110, facecolor=BG, bbox_inches="tight")
+    try:
+        fig.savefig(path, dpi=110, facecolor=BG, bbox_inches="tight")
+    except OSError:
+        # Windows : fichier encore ouvert dans la visionneuse ou en cours de synchro OneDrive
+        path = path.with_name(f"{path.stem}_{pd.Timestamp.now():%H%M%S}{path.suffix}")
+        fig.savefig(path, dpi=110, facecolor=BG, bbox_inches="tight")
     plt.close(fig)
     return path
 
