@@ -114,6 +114,13 @@ def main() -> None:
                 "Les mois déjà enregistrés sont conservés."
             )
         raise
+    except db.BentoError as e:
+        # coupure réseau en cours de téléchargement : pas de relance automatique, pour ne
+        # jamais payer deux fois une requête interrompue
+        raise SystemExit(
+            f"STOP : téléchargement interrompu ({e}). Les mois déjà enregistrés sont conservés ; "
+            "relance la même commande pour reprendre là où ça s'est arrêté."
+        )
 
 
 if __name__ == "__main__":
