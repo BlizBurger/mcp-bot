@@ -49,7 +49,7 @@ def run(cfg: dict, start, end, out_dir: Path = ROOT / "reports") -> dict:
     r = bs.rolls(df)
     if len(r):
         print("\nRoulements de contrat :")
-        print(r.round(2).to_string(index=False))
+        print(r.round({"basis_avant": 2, "basis_apres": 2, "saut": 2}).to_string(index=False))
 
     ok = (df["bruit"] <= b["max_noise"]).mean()
     print(f"\nMinutes où le report de niveaux est fiable (bruit ≤ {b['max_noise']} $) : {ok:.1%}")

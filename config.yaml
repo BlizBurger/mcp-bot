@@ -15,7 +15,10 @@ data:
                  2026-04-10, 2026-05-24, 2026-08-29]
 
 broker:
-  server_timezone: Europe/Athens  # heure serveur MT5 FTMO : UTC+3 l'été, UTC+2 l'hiver (vérifié)
+  # heure serveur MT5 FTMO = New York + 7 h (UTC+2 l'hiver, UTC+3 pendant l'heure
+  # d'été AMÉRICAINE). Vérifié par corrélation GC / XAUUSD : « Europe/Athens » était
+  # décalé d'1 h entre les changements d'heure US et européens.
+  server_clock: America/New_York+7
   point: 0.01                     # 1 point XAUUSD = 0,01 $ (le spread MT5 est en points)
 
 bridge:                   # report des niveaux GC sur le prix XAUUSD du broker

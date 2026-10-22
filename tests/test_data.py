@@ -103,11 +103,31 @@ def test_load_range_missing_raises(cfg):
         store.load_range(store.gc_trades_dir(cfg), "2020-01-01", "2020-02-01")
 
 
-def test_normalize_rates_converts_server_time_to_utc():
-    # 2026-01-05 10:00 heure serveur Athènes (UTC+2 en hiver) → 08:00 UTC
-    t = int(pd.Timestamp("2026-01-05 10:00").timestamp())
-    rates = [{"time": t, "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5,
-              "tick_volume": 10, "spread": 20, "real_volume": 0}]
-    df = xauusd.normalize_rates(rates, "Europe/Athens")
-    assert df.index[0] == pd.Timestamp("2026-01-05 08:00", tz="UTC")
+def _rate(server_time: str) -> dict:
+    return {"time": int(pd.Timestamp(server_time).timestamp()), "open": 1.0, "high": 2.0, "low": 0.5,
+            "close": 1.5, "tick_volume": 10, "spread": 20, "real_volume": 0}
+
+
+@pytest.mark.parametrize("server_time, utc", [
+    ("2026-01-05 10:00", "2026-01-05 08:00"),   # hiver : UTC+2
+    ("2026-07-06 10:00", "2026-07-06 07:00"),   # été : UTC+3
+    # entre le passage à l'heure d'été US (8 mars) et européen (29 mars) :
+    # FTMO est déjà en UTC+3 (Athènes serait encore en UTC+2)
+    ("2026-03-16 10:00", "2026-03-16 07:00"),
+    # entre la fin de l'heure d'été européenne (26 oct.) et US (2 nov.) : encore UTC+3
+    ("2025-10-28 10:00", "2025-10-28 07:00"),
+])
+def test_normalize_rates_ny_plus_7(server_time, utc):
+    df = xauusd.normalize_rates([_rate(server_time)], "America/New_York+7")
+    assert df.index[0] == pd.Timestamp(utc, tz="UTC")
     assert list(df.columns) == ["open", "high", "low", "close", "tick_volume", "spread"]
+
+
+def test_plain_timezone_still_supported():
+    df = xauusd.normalize_rates([_rate("2026-01-05 10:00")], "Europe/Athens")
+    assert df.index[0] == pd.Timestamp("2026-01-05 08:00", tz="UTC")
+
+
+def test_utc_to_server_round_trip():
+    t = pd.Timestamp("2026-03-16 07:00", tz="UTC")
+    assert xauusd.utc_to_server(t, "America/New_York+7") == pd.Timestamp("2026-03-16 10:00")
