@@ -193,6 +193,15 @@ def test_target_takes_nearest_obstacle_and_hvn_edge():
     assert ctx.target(1, 120.0, lv) is None               # rien au-dessus → trade refusé
 
 
+def test_breakout_measured_move_target():
+    lv = _levels()                                        # VA volume 90-110 : hauteur 20
+    assert ctx.measured_move(1, lv, "volume") == (130.0, "mouvement mesuré")
+    assert ctx.measured_move(-1, lv, "volume") == (70.0, "mouvement mesuré")
+    assert ctx.target(1, 115.0, lv, [ctx.measured_move(1, lv, "volume")]) == (130.0, "mouvement mesuré")
+    lv2 = _levels(hvn=[(120.0, 122.0)])                   # obstacle avant l'objectif : il gagne
+    assert ctx.target(1, 115.0, lv2, [ctx.measured_move(1, lv2, "volume")])[0] == 120.0
+
+
 # --------------------------------------------------------------------------- taille et coûts
 
 def test_sizing_rounds_down_and_refuses_min_lot(cfg):

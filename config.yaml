@@ -115,16 +115,22 @@ strategy:
   pivot_right: 2
   ob_body_atr: 1.0                # corps de la bougie de cassure >= 1 ATR (ATR avant la bougie)
   ob_lookback: 5                  # recherche de la dernière bougie opposée
-  near_atr: 0.15                  # « proche » : distance niveau ↔ zone <= 0.15 ATR M5
+  # « proche » : distance niveau ↔ zone (score ET retest de la borne cassée).
+  # 0.15 → 0.5 le 2026-10-23, décidé sur l'entonnoir in-sample (441 contacts refusés
+  # « zone loin de la borne », 0.15 ATR ≈ 0,30-0,50 $), PAS sur le PnL.
+  near_atr: 0.5
   min_score_families: 2           # variantes B et C
   sl_margin_atr: 0.1              # marge SL = max(spread, 0.1 ATR)
   min_rr_net: 1.5
   value_area_source: volume       # VA utilisée par les scénarios : volume | tpo
   value_return:
     reentry_within_m5: 3          # clôture de retour dans les 3 bougies M5 suivantes
-    setup_valid_m5: 6             # HYPOTHÈSE : durée de vie du setup après le retour (30 min)
+    setup_valid_m5: 12            # durée de vie du setup après le retour : 60 min (30 → 60 le 2026-10-23)
   breakout:
     volume_pairs: 20              # médiane des volumes cumulés des 20 paires précédentes
+    # objectif : mouvement mesuré = borne cassée ± hauteur de la VA précédente, sauf
+    # obstacle connu plus proche (ajouté le 2026-10-23 : sans lui, aucun objectif
+    # n'existait dans le sens d'une cassure)
   trigger:
     max_m1_bars: 3                # délai de confirmation après le contact
     absorption_enabled: false     # variante séparée, désactivée par défaut

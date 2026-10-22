@@ -37,13 +37,17 @@ avec les sorties `rejected` (taille), `duplicate`, `consumed` (contact sans trad
 3. **Scénario** (Value Area de la séance New York précédente)
    - *Retour vers la valeur* : une clôture M5 hors VA, puis une clôture de retour
      dans les 3 bougies. Retour sous VAH → vente seulement ; au-dessus de VAL → achat
-     seulement. Le POC précédent doit se trouver dans le sens du trade.
+     seulement. Le setup reste valable 60 minutes. Le POC précédent doit se trouver
+     dans le sens du trade.
    - *Cassure acceptée* (approximation, pas une preuve) : 2 clôtures M5 au-delà
      de la même borne, avec un volume GC de la paire ≥ médiane des 20 paires
      précédentes. On attend ensuite le retest d'une zone compatible proche de la
      borne cassée. Le scénario se désactive au retour d'une clôture dans la VA.
+     Son objectif de référence est le **mouvement mesuré** : borne cassée ± hauteur
+     de la VA précédente, sauf obstacle connu plus proche.
 4. **Confluences** (variantes B, C). Un niveau est « proche » si sa distance au
-   range de la zone est ≤ 0,15 ATR M5, après projection GC→XAUUSD. Il y a 1 point
+   range de la zone est ≤ 0,5 ATR M5, après projection GC→XAUUSD. La même distance
+   sert au retest de la borne cassée. Il y a 1 point
    par famille, au plus : rejet (LVN, single prints), bornes de valeur (VAH/VAL
    volume ou TPO), IB (connue à partir de 09:20). Il faut au moins 2 familles. Le
    POC ne rapporte aucun point.
@@ -115,6 +119,17 @@ coverage.csv   : start_utc,end_utc   (périodes où la liste est COMPLÈTE)
 ```
 
 En live, `python -m xauof.news.calendar --import-ff` importe la semaine en cours.
+
+## Journal des réglages
+
+| Date | Changement | Justification |
+|---|---|---|
+| 2026-10-23 | cassure : objectif mouvement mesuré | aucun objectif n'existait dans le sens d'une cassure (13 refus, R:R de 0,02 à 0,19) |
+| 2026-10-23 | `near_atr` 0,15 → 0,5 | 441 contacts refusés « zone loin de la borne » ; 0,15 ATR ≈ 0,30-0,50 $ |
+| 2026-10-23 | validité du retour vers la valeur 30 → 60 min | hypothèse initiale non spécifiée |
+
+Ces décisions s'appuient sur l'entonnoir in-sample (oct. 2025 → juin 2026), pas sur
+le PnL. La règle « le premier contact consomme la zone » est conservée.
 
 ## Validation
 

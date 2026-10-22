@@ -392,7 +392,9 @@ class Engine:
         if direction * (entry - sl) <= 0:
             why.append("prix exécutable déjà au-delà du SL")
         lv = self.d.levels
-        tgt = ctx.target(direction, entry, lv) if lv is not None else None
+        extra = ([ctx.measured_move(direction, lv, self.s["value_area_source"])]
+                 if p.scenario == "breakout" and lv is not None else None)
+        tgt = ctx.target(direction, entry, lv, extra) if lv is not None else None
         if tgt is None:
             why.append("aucun objectif admissible dans le sens du trade")
         if p.scenario == "value_return" and lv is not None:

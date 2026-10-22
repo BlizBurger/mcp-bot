@@ -106,11 +106,20 @@ def score(zone, lv: SessionLevels, ib_xau: Optional[tuple[float, float]], tol: f
             "score": sum(bool(v) for v in fam.values())}
 
 
-def target(direction: int, entry: float, lv: SessionLevels) -> Optional[tuple[float, str]]:
-    """Premier niveau opposant connu dans le sens du trade (POC, HVN, borne de VA).
-    HVN = zone : on vise son bord le plus proche. Aucun obstacle n'est sauté."""
+def measured_move(direction: int, lv: SessionLevels, source: str) -> tuple[float, str]:
+    """Cassure acceptée : borne cassée ± hauteur de la Value Area précédente."""
+    val, _, vah = lv.value_area(source)
+    height = vah - val
+    return (vah + height, "mouvement mesuré") if direction > 0 else (val - height, "mouvement mesuré")
+
+
+def target(direction: int, entry: float, lv: SessionLevels,
+           extra: Optional[list[tuple[float, str]]] = None) -> Optional[tuple[float, str]]:
+    """Premier niveau opposant connu dans le sens du trade (POC, HVN, borne de VA, plus
+    les objectifs `extra`, ex. mouvement mesuré). HVN = zone : on vise son bord le plus
+    proche. Aucun obstacle n'est sauté : le plus proche dans le sens du trade gagne."""
     cands = [(lv.poc_v, "POC vol"), (lv.poc_t, "POC TPO"), (lv.vah_v, "VAH vol"), (lv.val_v, "VAL vol"),
-             (lv.vah_t, "VAH TPO"), (lv.val_t, "VAL TPO")]
+             (lv.vah_t, "VAH TPO"), (lv.val_t, "VAL TPO")] + list(extra or [])
     for lo, hi in lv.hvn:
         near_edge = lo if direction > 0 else hi
         if lo <= entry <= hi:
