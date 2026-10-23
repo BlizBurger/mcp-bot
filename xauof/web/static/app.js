@@ -5,7 +5,7 @@ const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? "�
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const sign = (x, d = 0) => (x > 0 ? "+" : "") + fmt(x, d);
 
-let state = null, tf = 1, bars = [], priceLines = [];
+let state = null, tf = 1, bars = [], priceLines = [], journalTrades = [];
 
 /* ---------------------------------------------------------------- graphiques */
 const LW = LightweightCharts;
@@ -196,7 +196,7 @@ document.addEventListener("mousemove", (e) => {
 /* ---------------------------------------------------------------- journal */
 let criteria = [];
 async function loadJournal() {
-  const j = await getJSON("/api/journal"); criteria = j.criteres;
+  const j = await getJSON("/api/journal"); criteria = j.criteres; journalTrades = j.trades;
   const g = j.stats.global;
   const card = (label, val, cls = "") => `<div class="kpi"><label>${label}</label><div class="big mono ${cls}">${val}</div></div>`;
   $("jstats").innerHTML = card("TRADES", g.n) + card("GAGNANTS", g.n ? `${Math.round(g.gagnants * 100)} %` : "—")
@@ -206,7 +206,8 @@ async function loadJournal() {
     `<div class="panel small"><b>${c}</b><div class="muted">avec : ${v.avec.n} trades · R ${v.avec.r_moyen ?? "—"} · ${sign(v.avec.pnl, 2)} $</div><div class="muted">sans : ${v.sans.n} trades · R ${v.sans.r_moyen ?? "—"}</div></div>`).join("");
   $("jtable").innerHTML = `<tr><th>OUVERTURE</th><th>SENS</th><th>LOTS</th><th>ENTRÉE → SORTIE</th><th>PNL</th><th>R</th><th>SETUP</th><th>CRITÈRES</th><th>NOTE</th></tr>` +
     j.trades.slice().reverse().map((t) => `<tr data-id="${t.id}">
-      <td class="mono">${new Date(t.ouverture).toLocaleString("fr-FR", { timeZone: "America/New_York" })}</td>
+      <td class="mono">${new Date(t.ouverture).toLocaleString("fr-FR", { timeZone: "America/New_York" })}
+        <div><button class="btn mini j-card" data-id="${t.id}">Visuel</button></div></td>
       <td class="${t.sens === "achat" ? "up" : "down"}">${t.sens}</td><td class="mono">${t.lots}</td>
       <td class="mono">${fmt(t.prix_entree)} → ${fmt(t.prix_sortie)}${t.sl_initial ? `<div class="muted">SL ${fmt(t.sl_initial)}</div>` : ""}</td>
       <td class="mono ${t.pnl >= 0 ? "up" : "down"}">${sign(t.pnl, 2)}</td><td class="mono">${t.r ?? "—"}</td>

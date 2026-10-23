@@ -102,8 +102,29 @@
     </section>
   </main>
 
+  <div id="card-modal" class="modal hidden">
+    <div class="modal-box panel">
+      <div class="panel-head"><h2>VISUEL INSTAGRAM</h2><button id="card-close" class="btn">✕</button></div>
+      <div class="card-layout">
+        <canvas id="card-canvas" width="1080" height="1350"></canvas>
+        <div class="card-opts">
+          <label class="btn file">Choisir l'image de fond<input type="file" id="card-bg" accept="image/*" hidden></label>
+          <p class="muted small">L'image reste sur ton appareil : rien n'est envoyé.</p>
+          <label>Cadrage de l'image <select id="card-focus"><option value="0.5">centre</option><option value="0">haut</option><option value="1">bas</option></select></label>
+          <label>Position de la carte <select id="card-pos"><option value="bottom">en bas</option><option value="middle">au centre</option><option value="top">en haut</option></select></label>
+          <label><input type="checkbox" id="card-usd"> afficher le résultat en $</label>
+          <label>Compte Instagram <input type="text" id="card-handle" placeholder="@ton_compte"></label>
+          <button id="card-dl" class="btn">⬇ Télécharger l'image (PNG)</button>
+          <label>Légende (à compléter)<textarea id="card-caption" rows="12"></textarea></label>
+          <button id="card-copy" class="btn">Copier la légende</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="tooltip" class="tooltip hidden"></div>
   <footer>Outil d'aide à la décision, aucun ordre n'est passé. Aucune stratégie testée n'a montré d'edge statistique : la décision reste la tienne.</footer>
   <script src="/static/app.js"></script>
+  <script src="/static/card.js"></script>
 </body>
 </html>

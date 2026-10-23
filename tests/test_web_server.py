@@ -22,6 +22,7 @@ def client(tmp_path_factory):
 def test_index_and_static(client):
     assert "XAUUSD" in client.get("/").text
     assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/card.js").status_code == 200 and "card-modal" in client.get("/").text
 
 
 def test_state_payload(client):
