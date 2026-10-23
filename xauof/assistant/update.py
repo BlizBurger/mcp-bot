@@ -42,7 +42,11 @@ def fetch_session(cfg: dict, client, session_day: pd.Timestamp) -> pd.DataFrame:
 
 
 def main() -> None:
+    import warnings
+
     import databento as db
+
+    warnings.filterwarnings("ignore", message=".*inplace keyword.*")   # bruit interne databento / pandas
 
     from xauof.assistant import mt5_live
 

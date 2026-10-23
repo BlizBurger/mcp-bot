@@ -67,3 +67,16 @@ avons déjà observé ce marché.
 | `partial_fraction` | 0,5 | comme la V2 |
 | `breakeven_after_partial` | oui | comme la V2 |
 | `min_first_target_r` | 1,0 | le milieu de l'IB doit valoir au moins le risque |
+
+## Verdict sur la période d'étude — V3 ABANDONNÉE
+
+Backtest `--research`, oct. 2024 → juin 2026, 446 séances, filtre news réel :
+130 trades, 36,9 % de gagnants, **R moyen net −0,076 [IC95 −0,30 ; +0,15]**.
+R moyen avant frais +0,038 [IC95 −0,18 ; +0,26] ; frais 0,115 R par trade.
+
+Application de la règle figée : ≥ 100 trades (130 ✓), mais R moyen net ≤ 0 et borne
+basse de l'IC95 (−0,30) < −0,05 → **V3 abandonnée**, sans réglage. La période
+réservée reste intacte.
+
+Enseignements : 196 signaux refusés car le milieu de l'IB était à moins de 1 R ;
+avant frais, l'effet est indiscernable de zéro. Pas d'edge démontré.

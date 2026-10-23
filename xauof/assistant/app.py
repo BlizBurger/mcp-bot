@@ -92,12 +92,12 @@ def live_view():
         st.warning(a)
 
     left, right = st.columns([3, 1])
-    left.plotly_chart(chart(snap, xau, tz), use_container_width=True)
+    left.plotly_chart(chart(snap, xau, tz), width="stretch")
     with right:
         st.subheader("Niveaux de la veille")
         if snap["niveaux"]:
             st.dataframe(pd.DataFrame(lv.level_lines(snap["niveaux"]), columns=["niveau", "prix"]),
-                         hide_index=True, use_container_width=True)
+                         hide_index=True, width="stretch")
             near = snap["niveau_proche"]
             st.caption(f"Le plus proche : {near[0]} {near[1]:.2f} ({p['bid'] - near[1]:+.2f} $)")
         st.subheader("IB du jour")
@@ -109,14 +109,14 @@ def live_view():
             st.dataframe(pd.DataFrame([{"zone": z.kind, "sens": "achat" if z.direction > 0 else "vente",
                                         "bas": round(z.low, 2), "haut": round(z.high, 2),
                                         "depuis": z.active_from.tz_convert(tz).strftime("%H:%M")} for z in zs]),
-                         hide_index=True, use_container_width=True)
+                         hide_index=True, width="stretch")
         else:
             st.write("aucune")
         st.subheader("Prochaines annonces USD")
         up = snap["prochaines_news"]
         if len(up):
             st.dataframe(pd.DataFrame({"heure NY": up.index.tz_convert(tz).strftime("%a %d %H:%M"),
-                                       "annonce": up["event"].values}), hide_index=True, use_container_width=True)
+                                       "annonce": up["event"].values}), hide_index=True, width="stretch")
         else:
             st.write("aucune connue" if snap["calendrier_ok"] else "calendrier non couvert")
         st.subheader("Compte FTMO")
