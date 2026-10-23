@@ -81,25 +81,34 @@ def level_points(levels: dict) -> list[tuple[str, float]]:
     return pts
 
 
-def trade_plan(zone, levels: dict, atr: float, spread: float, inst, budget_usd: float) -> dict:
-    """Entrée limite au bord de la zone, SL au-delà (+ marge), TP avant le premier niveau d'hier
-    à au moins PLAN_MIN_RR. Prix bid ; une vente se clôture à l'ask, d'où le spread côté vente."""
-    from xauof.strategy.instrument import size_position
+def plan_sl(zone, atr: float, spread: float) -> float:
+    """SL au-delà du bord distal de la zone + PLAN_SL_ATR × ATR (+ spread pour une vente)."""
+    return zone.low - PLAN_SL_ATR * atr if zone.direction > 0 else zone.high + spread + PLAN_SL_ATR * atr
 
-    d = zone.direction
-    if d > 0:
-        entry, sl = zone.high, zone.low - PLAN_SL_ATR * atr
-    else:
-        entry, sl = zone.low, zone.high + spread + PLAN_SL_ATR * atr
+
+def plan_target(d: int, entry: float, sl: float, levels: dict, atr: float, spread: float):
+    """(TP, nom du niveau) : premier niveau d'hier à ≥ PLAN_MIN_RR depuis `entry`, ou None."""
     risk = abs(entry - sl)
     cands = []
     for name, p in level_points(levels):
         tp = p - PLAN_TP_ATR * atr if d > 0 else p + spread + PLAN_TP_ATR * atr
         if d * (tp - entry) >= PLAN_MIN_RR * risk:
             cands.append((abs(tp - entry), round(tp, 2), name))
-    if not cands:
+    return min(cands)[1:] if cands else None
+
+
+def trade_plan(zone, levels: dict, atr: float, spread: float, inst, budget_usd: float) -> dict:
+    """Entrée limite au bord de la zone, SL au-delà (+ marge), TP avant le premier niveau d'hier
+    à au moins PLAN_MIN_RR. Prix bid ; une vente se clôture à l'ask, d'où le spread côté vente."""
+    from xauof.strategy.instrument import size_position
+
+    d = zone.direction
+    entry, sl = (zone.high if d > 0 else zone.low), plan_sl(zone, atr, spread)
+    risk = abs(entry - sl)
+    found = plan_target(d, entry, sl, levels, atr, spread)
+    if not found:
         return {"refus": f"pas de niveau d'hier à {PLAN_MIN_RR} R ou plus (RR insuffisant)"}
-    _, tp, target = min(cands)
+    tp, target = found
     obstacles = sorted({n for n, p in level_points(levels) if 0 < d * (p - entry) < d * (tp - entry)
                         and abs(p - entry) > risk * 0.25 and n != target})
     size = size_position(inst, d, entry, sl, tp, budget_usd)

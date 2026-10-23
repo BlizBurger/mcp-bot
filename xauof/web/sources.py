@@ -30,11 +30,17 @@ class MT5Source:
         from xauof.data.xauusd import mt5_time, server_to_utc
 
         clock = self.cfg["broker"]["server_clock"]
-        raw = self.mt5.copy_ticks_range(self.cfg["symbols"]["broker"], mt5_time(start, clock), mt5_time(end, clock),
-                                        self.mt5.COPY_TICKS_INFO)
-        if raw is None or len(raw) == 0:
+        parts, a = [], pd.Timestamp(start)
+        while a < end:                              # par tranches de 2 h : une longue séance d'un bloc peut échouer
+            b = min(a + pd.Timedelta(hours=2), pd.Timestamp(end))
+            raw = self.mt5.copy_ticks_range(self.cfg["symbols"]["broker"], mt5_time(a, clock), mt5_time(b, clock),
+                                            self.mt5.COPY_TICKS_INFO)
+            if raw is not None and len(raw):
+                parts.append(pd.DataFrame(raw))
+            a = b
+        if not parts:
             return pd.DataFrame(columns=["bid", "ask"])
-        df = pd.DataFrame(raw)
+        df = pd.concat(parts, ignore_index=True).drop_duplicates(subset=["time_msc", "bid", "ask"])
         idx = server_to_utc(pd.to_datetime(df["time_msc"], unit="ms"), clock)
         return pd.DataFrame({"bid": df["bid"].to_numpy(), "ask": df["ask"].to_numpy()},
                             index=pd.DatetimeIndex(idx)).dropna().sort_index()

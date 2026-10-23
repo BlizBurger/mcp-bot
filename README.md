@@ -88,7 +88,8 @@ Aide à la décision pour ton trading discrétionnaire. **Lecture seule : aucun 
 python -m xauof.assistant.update   # chaque matin (MT5 ouvert) : niveaux GC de la veille vers XAUUSD
 python -m xauof.web                # interface en direct (MT5 ouvert) : http://127.0.0.1:8000
 python -m xauof.web --demo         # démo sur données synthétiques (marché fermé)
-python -m xauof.web.alert_stats   # alertes A+ : fréquence, horaires et ce que les plans auraient donné (historique)
+python -m xauof.web.alert_stats   # alertes A+ : fréquence, horaires, plans, hypothèses H1 / H2 (étape 1)
+python -m xauof.web.alert_stats --holdout   # UNE seule fois : H1 / H2 sur le holdout (HYPOTHESES_ALERTES.md)
 ```
 
 - **Live** : prix et spread, contexte (position par rapport à la Value Area d'hier),

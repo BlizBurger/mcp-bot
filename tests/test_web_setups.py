@@ -130,3 +130,35 @@ def test_simulate_plan_fill_tp_and_conservative_conventions():
     r = simulate_plan(sell, -1, _bars([[99.5, 100.1, 99.4, 99.9, 30], [99.9, 100.75, 99.8, 100.6, 30]]),
                       end, flat, inst, 0.01)
     assert r["issue"] == "SL"
+
+
+def test_h1_day_direction_requires_finished_ib_and_breakout():
+    from xauof.web.alert_stats import day_direction_ok
+
+    end = pd.Timestamp("2026-10-23 13:20", tz="UTC")
+    assert not day_direction_ok(1, 105.0, end - pd.Timedelta(minutes=1), end, 104.0, 100.0)   # IB pas finie
+    assert day_direction_ok(1, 105.0, end, end, 104.0, 100.0)
+    assert not day_direction_ok(1, 103.0, end, end, 104.0, 100.0)                            # dans l'IB
+    assert day_direction_ok(-1, 99.0, end, end, 104.0, 100.0)
+    assert not day_direction_ok(-1, 105.0, end, end, 104.0, 100.0)
+
+
+def test_h2_confirmation_needs_candle_and_gc_delta_in_trade_direction():
+    from xauof.web.alert_stats import simulate_confirm
+
+    inst = _inst()
+    end, flat = pd.Timestamp("2026-10-23 17:15", tz="UTC"), pd.Timestamp("2026-10-23 17:30", tz="UTC")
+    lv = {**LV, "lvn": [95.0, 104.0]}
+    z = zone(1, 99.0, 100.0)                        # achat ; SL = 99 - 0,25 = 98.75
+    bars = _bars([[101, 101, 99.8, 99.9, 30],       # contact, bougie baissière
+                  [99.9, 100.4, 99.7, 100.3, 30],   # haussière mais delta GC négatif : pas de signal
+                  [100.3, 100.8, 100.2, 100.7, 30], # haussière + delta positif : signal
+                  [100.7, 101.0, 100.6, 100.9, 30], # entrée à l'ouverture : 100.7 + 0.30 + 0.10
+                  [100.9, 106.2, 100.8, 106.0, 30]])
+    delta = pd.Series([-5.0, -3.0, 8.0, 2.0, 4.0], index=bars.index)
+    r = simulate_confirm(z, 1.0, 0.3, bars, delta, lv, end, flat, inst, 0.01)
+    assert r["entree_reelle"] == pytest.approx(101.1) and r["t_entree"] == bars.index[3]
+    assert r["plan"]["tp"] == 105.9 and r["issue"] == "TP" and r["r"] > 1   # LVN 104 < 1,5 R : bord haut du HVN
+    invalid = _bars([[101, 101, 99.8, 99.9, 30], [99.9, 99.9, 98.5, 98.6, 30]])
+    assert simulate_confirm(z, 1.0, 0.3, invalid, pd.Series([1.0, 1.0], index=invalid.index), lv, end, flat,
+                            inst, 0.01)["plan"]["refus"].startswith("zone invalidée")
