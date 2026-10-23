@@ -65,6 +65,9 @@ def fetch(cfg: dict, mt5, start, end, force: bool = False) -> None:
                                      utc_to_server(c.start, clock).to_pydatetime(),
                                      utc_to_server(c.end, clock).to_pydatetime())
         df = normalize_rates(rates if rates is not None else [], clock)
+        # MT5 inclut la bougie située exactement à la borne de fin : chaque fichier
+        # mensuel ne garde que ses propres minutes [début, fin)
+        df = df[(df.index >= c.start) & (df.index < c.end)] if not df.empty else df
         if df.empty:
             print(f"  {c.month:%Y-%m} : aucune bougie ({mt5.last_error()})")
             continue

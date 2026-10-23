@@ -44,7 +44,7 @@ def prepare(cfg: dict, start, end) -> dict:
     """Charge les données (avec 10 jours d'historique avant `start` pour la séance précédente)."""
     lo, hi = pd.Timestamp(start) - pd.Timedelta(days=10), pd.Timestamp(end) + pd.Timedelta(days=1)
     gc = gc_bars.load_m1(cfg, lo, hi)
-    xau = store.load_range(store.xauusd_m1_dir(cfg), lo, hi, index_name="time")
+    xau = store.load_range(store.xauusd_m1_dir(cfg), lo, hi, index_name="time", bars=True)
     al = bs.align(gc, xau, cfg["broker"]["point"])
     al["basis_ref"] = bs.rolling_basis(al, cfg["bridge"]["window"], cfg["bridge"]["min_obs"])
     al["bruit"] = bs.basis_noise(al, cfg["bridge"]["window"], cfg["bridge"]["min_obs"])

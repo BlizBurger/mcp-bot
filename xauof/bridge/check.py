@@ -26,7 +26,7 @@ BG, FG, GRID, ACCENT, BLUE = "#0d1117", "#c9d1d9", "#21262d", "#f0b429", "#58a6f
 def run(cfg: dict, start, end, out_dir: Path = ROOT / "reports") -> dict:
     b = cfg["bridge"]
     gc = gc_bars.load_m1(cfg, start, end)
-    xau = store.load_range(store.xauusd_m1_dir(cfg), start, end, index_name="time")
+    xau = store.load_range(store.xauusd_m1_dir(cfg), start, end, index_name="time", bars=True)
     df = bs.align(gc, xau, cfg["broker"]["point"])
     if df.empty:
         raise SystemExit("Aucune minute commune GC / XAUUSD : vérifie les deux téléchargements.")

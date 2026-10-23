@@ -58,12 +58,18 @@ def save(df: pd.DataFrame, path: Path) -> None:
     df.to_parquet(path)
 
 
-def load_range(directory: Path, start, end, index_name: str = "ts_event") -> pd.DataFrame:
-    """Concatène les fichiers mensuels couvrant [start, end) et découpe."""
+def load_range(directory: Path, start, end, index_name: str = "ts_event", bars: bool = False) -> pd.DataFrame:
+    """Concatène les fichiers mensuels couvrant [start, end) et découpe.
+
+    bars=True (bougies) : une minute présente dans deux fichiers mensuels n'est gardée
+    qu'une fois. Jamais pour des transactions, qui peuvent partager un horodatage."""
     start, end = utc(start), utc(end)
     months = pd.date_range(start.normalize().replace(day=1), end, freq="MS")
     flt = [(index_name, ">=", start), (index_name, "<", end)]
     frames = [pd.read_parquet(p, filters=flt) for m in months if (p := month_file(directory, m)).exists()]
     if not frames:
         raise FileNotFoundError(f"aucune donnée dans {directory} pour {start:%Y-%m-%d} → {end:%Y-%m-%d}")
-    return pd.concat(frames).sort_index()
+    df = pd.concat(frames).sort_index()
+    if bars:
+        df = df[~df.index.duplicated(keep="last")]
+    return df

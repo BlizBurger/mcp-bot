@@ -131,3 +131,31 @@ def test_plain_timezone_still_supported():
 def test_utc_to_server_round_trip():
     t = pd.Timestamp("2026-03-16 07:00", tz="UTC")
     assert xauusd.utc_to_server(t, "America/New_York+7") == pd.Timestamp("2026-03-16 10:00")
+
+
+def test_load_range_bars_drops_duplicate_minutes_across_months(cfg):
+    d = store.xauusd_m1_dir(cfg)
+    a = pd.DataFrame({"close": [1.0, 2.0]}, index=pd.DatetimeIndex(
+        ["2026-01-31 23:59", "2026-02-01 00:00"], tz="UTC", name="time"))
+    b = pd.DataFrame({"close": [2.0, 3.0]}, index=pd.DatetimeIndex(
+        ["2026-02-01 00:00", "2026-02-01 00:01"], tz="UTC", name="time"))
+    store.save(a, store.month_file(d, pd.Timestamp("2026-01-01", tz="UTC")))
+    store.save(b, store.month_file(d, pd.Timestamp("2026-02-01", tz="UTC")))
+    df = store.load_range(d, "2026-01-31", "2026-02-02", index_name="time", bars=True)
+    assert df.index.is_unique and len(df) == 3
+
+
+def test_xauusd_fetch_keeps_only_month_minutes(cfg):
+    class FakeMT5:
+        TIMEFRAME_M1 = 1
+
+        def copy_rates_range(self, symbol, tf, start, end):
+            # comme MT5 : la bougie à la borne de fin est incluse
+            return [_rate(str(start)), _rate(str(end))]
+
+        def last_error(self):
+            return (0, "ok")
+
+    xauusd.fetch(cfg, FakeMT5(), "2026-01-01", "2026-02-01")
+    df = pd.read_parquet(store.month_file(store.xauusd_m1_dir(cfg), pd.Timestamp("2026-01-01", tz="UTC")))
+    assert list(df.index) == [pd.Timestamp("2026-01-01", tz="UTC")]

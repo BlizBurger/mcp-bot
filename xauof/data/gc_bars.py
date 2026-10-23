@@ -30,4 +30,4 @@ def load_m1(cfg: dict, start, end) -> pd.DataFrame:
         if src.exists() and (not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime):
             print(f"  construction des bougies GC 1 min : {c.month:%Y-%m}")
             build_month(cfg, c.month)
-    return store.load_range(m1_dir(cfg), start, end)
+    return store.load_range(m1_dir(cfg), start, end, bars=True)
