@@ -80,6 +80,20 @@ sans décalage (sinon erreur de fuseau ou de changement d'heure).
 python -m xauof.bridge.check --start 2025-10-01 --end 2026-10-01
 ```
 
+## Assistant de trading manuel
+
+Aide à la décision pour ton trading discrétionnaire. **Lecture seule : aucun ordre n'est passé.**
+
+```bash
+python -m xauof.assistant.update        # chaque matin (MT5 ouvert) : niveaux GC de la veille → XAUUSD
+streamlit run xauof/assistant/app.py    # tableau de bord en direct (rafraîchi toutes les 30 s)
+```
+
+Affiche : prix et spread, niveaux de la veille (POC / VAH / VAL volume et TPO, HVN,
+LVN, single prints) reportés sur XAUUSD, IB du jour, zones FVG / OB actives (mêmes
+règles que le moteur), prochaines annonces et fenêtres news, état du compte FTMO
+(perte du jour, marge avant l'arrêt interne et le plancher).
+
 ## Calendrier économique
 
 ```bash

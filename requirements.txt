@@ -12,5 +12,9 @@ databento>=0.40
 # Prix XAUUSD + exécution (Windows, ou Wine sur le serveur Linux)
 MetaTrader5>=5.0.45 ; sys_platform == "win32"
 
+# Assistant manuel (tableau de bord)
+streamlit>=1.37
+plotly>=5.20
+
 # Tests
 pytest>=8.0
