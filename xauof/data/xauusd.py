@@ -42,6 +42,15 @@ def utc_to_server(ts: pd.Timestamp, spec: str) -> pd.Timestamp:
     return ts.tz_convert(zone).tz_localize(None) + offset
 
 
+def mt5_time(ts: pd.Timestamp, spec: str):
+    """Date à passer à l'API MT5 : heure SERVEUR, marquée UTC.
+
+    MT5 stocke ses heures « serveur » comme si c'était de l'UTC. Une date Python sans
+    fuseau serait interprétée dans le fuseau du PC (ex. Paris), d'où un décalage de
+    la fenêtre demandée : il faut une date explicitement UTC (doc MetaTrader5)."""
+    return utc_to_server(ts, spec).tz_localize("UTC").to_pydatetime()
+
+
 def normalize_rates(rates, server_clock: str) -> pd.DataFrame:
     """Tableau MT5 (time, open, high, low, close, tick_volume, spread, ...) → DataFrame UTC."""
     df = pd.DataFrame(rates)
@@ -62,8 +71,7 @@ def fetch(cfg: dict, mt5, start, end, force: bool = False) -> None:
             continue
         # les bornes demandées à MT5 sont aussi en heure serveur
         rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1,
-                                     utc_to_server(c.start, clock).to_pydatetime(),
-                                     utc_to_server(c.end, clock).to_pydatetime())
+                                     mt5_time(c.start, clock), mt5_time(c.end, clock))
         df = normalize_rates(rates if rates is not None else [], clock)
         # MT5 inclut la bougie située exactement à la borne de fin : chaque fichier
         # mensuel ne garde que ses propres minutes [début, fin)

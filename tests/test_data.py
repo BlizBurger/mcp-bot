@@ -159,3 +159,14 @@ def test_xauusd_fetch_keeps_only_month_minutes(cfg):
     xauusd.fetch(cfg, FakeMT5(), "2026-01-01", "2026-02-01")
     df = pd.read_parquet(store.month_file(store.xauusd_m1_dir(cfg), pd.Timestamp("2026-01-01", tz="UTC")))
     assert list(df.index) == [pd.Timestamp("2026-01-01", tz="UTC")]
+
+
+def test_mt5_time_is_server_wall_clock_marked_utc():
+    import datetime as dt
+
+    t = pd.Timestamp("2026-10-23 10:39", tz="UTC")                    # 06:39 New York (EDT)
+    d = xauusd.mt5_time(t, "America/New_York+7")
+    assert d.tzinfo is not None and d.utcoffset() == dt.timedelta(0)
+    assert (d.hour, d.minute) == (13, 39)                             # heure serveur FTMO (NY + 7)
+    assert d.timestamp() == pd.Timestamp("2026-10-23 13:39", tz="UTC").timestamp()
+

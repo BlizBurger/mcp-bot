@@ -7,7 +7,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from xauof.config import ROOT
-from xauof.data.xauusd import normalize_rates, utc_to_server
+from xauof.data.xauusd import mt5_time, normalize_rates
 
 
 def connect():
@@ -28,8 +28,7 @@ def connect():
 def xau_m1(mt5, cfg: dict, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     clock, symbol = cfg["broker"]["server_clock"], cfg["symbols"]["broker"]
     mt5.symbol_select(symbol, True)
-    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, utc_to_server(start, clock).to_pydatetime(),
-                                 utc_to_server(end, clock).to_pydatetime())
+    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, mt5_time(start, clock), mt5_time(end, clock))
     df = normalize_rates(rates if rates is not None else [], clock)
     return df[(df.index >= start) & (df.index < end)] if not df.empty else df
 
@@ -40,8 +39,7 @@ def account(mt5, cfg: dict, now: pd.Timestamp) -> dict:
     tz = cfg["risk"]["daily_reset_timezone"]
     midnight = now.tz_convert(tz).normalize().tz_convert("UTC")
     clock = cfg["broker"]["server_clock"]
-    deals = mt5.history_deals_get(utc_to_server(midnight, clock).to_pydatetime(),
-                                  utc_to_server(now + pd.Timedelta(minutes=1), clock).to_pydatetime()) or []
+    deals = mt5.history_deals_get(mt5_time(midnight, clock), mt5_time(now + pd.Timedelta(minutes=1), clock)) or []
     trades = [d for d in deals if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL)]   # hors dépôts / retraits
     realized = sum(d.profit + d.commission + d.swap + getattr(d, "fee", 0.0) for d in trades)
     return {"balance": float(info.balance), "equity": float(info.equity), "realized_today": float(realized)}
