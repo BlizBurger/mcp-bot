@@ -45,3 +45,25 @@ def test_alert_center_dedupes_and_escalates(monkeypatch):
     s2 = su.qualify([zone(1, 89.8, 90.5, state="touched", zid="a")], LV, price=90.2, atr=1.0, near_atr=0.5)
     ac.from_setups(s2, T, "CPI (12:30 UTC)")
     assert ac.feed[0]["niveau"] == "alerte" and "fenêtre news" in ac.feed[0]["texte"]
+
+
+def test_replay_day_matches_live_alert_logic(monkeypatch):
+    """Rejeu historique : alertes datées dans la fenêtre d'entrée, une seule par zone et par étape."""
+    from xauof.assistant.snapshot import ny_time
+    from xauof.config import load_config
+    from xauof.web.alert_stats import replay_day, summarize
+    from xauof.web.sources import DemoSource
+
+    monkeypatch.setenv("XAUOF_NO_TELEGRAM", "1")
+    cfg = load_config()
+    src, day, ny = DemoSource(cfg, speed=0.0), pd.Timestamp("2026-10-23"), "America/New_York"
+    a, b = ny_time(day, cfg["strategy"]["warmup_start"], ny), ny_time(day, "13:35", ny)
+    ev = replay_day(cfg, src._bars[(src._bars.index >= a) & (src._bars.index < b)], src._levels, day)
+    assert ev, "la journée démo contient des setups A+"
+    lo, hi = ny_time(day, cfg["strategy"]["entry_start"], ny), ny_time(day, cfg["strategy"]["entry_end"], ny)
+    assert all(lo <= e["t"] <= hi for e in ev)
+    assert all(e["t"] <= f["t"] for e, f in zip(ev, ev[1:]))
+    keys = [(e["texte"].split(" sur ")[0].split("— ")[1], e["etape"]) for e in ev]
+    assert len(keys) == len(set(keys))
+    out = summarize(ev, [day])
+    assert "par semaine" in out and "rentabilité" in out

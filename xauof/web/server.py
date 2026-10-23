@@ -108,9 +108,10 @@ class Hub:
         atr = float(smc_atr(m5, cfg["strategy"]["atr_period"]).iloc[-1]) if len(m5) >= cfg["strategy"]["atr_period"] else np.nan
         bid = snap["prix"]["bid"]
         setups = qualify(snap["zones"], levels, bid, atr, cfg["strategy"]["near_atr"])
-        self.alerts.from_setups(setups, now, snap["news_blackout"])
-
         t_start = ny_time(day, cfg["strategy"]["entry_start"], NY)
+        if t_start <= now <= ny_time(day, cfg["strategy"]["entry_end"], NY):     # pas d'alerte hors fenêtre d'entrée
+            self.alerts.from_setups(setups, now, snap["news_blackout"])
+
         of_from = t_start if now > t_start else now - pd.Timedelta(hours=1)   # CVD depuis l'ouverture de séance
         of = proxy_bars(src.ticks(of_from, now), cvd_from=t_start)
         last5 = of[of.index >= now - pd.Timedelta(minutes=5)]
