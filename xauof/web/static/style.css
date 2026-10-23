@@ -133,6 +133,10 @@ table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { font-family: Orbitron; font-size: 10px; letter-spacing: 1px; color: var(--muted); text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
 td { padding: 8px; border-bottom: 1px solid rgba(255, 255, 255, .04); vertical-align: top; }
 td input[type=text] { width: 100%; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+td.note-cell { min-width: 320px; width: 30%; }
+td textarea.j-note { width: 100%; height: 4.6em; resize: none; overflow: hidden; background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font: inherit; line-height: 1.4; transition: height .15s; }
+td textarea.j-note:focus { height: 14em; overflow: auto; outline: none; border-color: var(--cyan); box-shadow: var(--glow); }
 td label { display: block; white-space: nowrap; color: var(--muted); }
 footer { padding: 10px 24px 18px; color: var(--muted); font-size: 11px; }
 

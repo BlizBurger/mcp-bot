@@ -3,8 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import os
 import threading
 import webbrowser
+from pathlib import Path
+
+
+def demo_config(cfg: dict) -> dict:
+    """La démo ne touche ni au vrai journal (dossier data/demo/ à part) ni à Telegram."""
+    os.environ["XAUOF_NO_TELEGRAM"] = "1"
+    cfg = copy.deepcopy(cfg)
+    cfg["data"]["dir"] = str(Path(cfg["data"]["dir"]) / "demo")
+    return cfg
 
 
 def main() -> None:
@@ -20,6 +31,8 @@ def main() -> None:
     p.add_argument("--no-browser", action="store_true")
     args = p.parse_args()
     cfg = load_config()
+    if args.demo:
+        cfg = demo_config(cfg)
     source = DemoSource(cfg) if args.demo else MT5Source(cfg)
     url = f"http://127.0.0.1:{args.port}"
     if not args.no_browser:

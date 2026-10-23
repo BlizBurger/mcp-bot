@@ -64,3 +64,15 @@ def test_price_is_live_tick(client):
     s = client.get("/api/state").json()
     assert s["prix"]["direct"] is True and s["prix"]["ask"] > s["prix"]["bid"]
     assert s["prix"]["spread_pts"] == round((s["prix"]["ask"] - s["prix"]["bid"]) / 0.01)
+
+
+def test_demo_isolated_from_real_journal_and_telegram(monkeypatch):
+    from xauof.web import journal as jr
+    from xauof.web.__main__ import demo_config
+
+    monkeypatch.delenv("XAUOF_NO_TELEGRAM", raising=False)
+    cfg = load_config()
+    demo = demo_config(cfg)
+    assert jr.journal_path(demo) != jr.journal_path(cfg)
+    assert jr.journal_path(demo).parent.parent.name == "demo"
+    assert os.environ["XAUOF_NO_TELEGRAM"] == "1"

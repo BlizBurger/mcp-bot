@@ -2,6 +2,7 @@
 const C = { cyan: "#00e5ff", magenta: "#ff2bd6", gold: "#ffcf33", green: "#00ffa3", red: "#ff3b6b", grey: "#8b9bb4" };
 const $ = (id) => document.getElementById(id);
 const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? "—" : Number(x).toFixed(d));
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const sign = (x, d = 0) => (x > 0 ? "+" : "") + fmt(x, d);
 
 let state = null, tf = 1, bars = [], priceLines = [];
@@ -201,10 +202,10 @@ async function loadJournal() {
       <td class="${t.sens === "achat" ? "up" : "down"}">${t.sens}</td><td class="mono">${t.lots}</td>
       <td class="mono">${fmt(t.prix_entree)} → ${fmt(t.prix_sortie)}${t.sl_initial ? `<div class="muted">SL ${fmt(t.sl_initial)}</div>` : ""}</td>
       <td class="mono ${t.pnl >= 0 ? "up" : "down"}">${sign(t.pnl, 2)}</td><td class="mono">${t.r ?? "—"}</td>
-      <td><input type="text" class="j-setup" value="${t.setup || ""}" placeholder="ex. FVG sur VAL"></td>
+      <td><input type="text" class="j-setup" value="${esc(t.setup)}" placeholder="ex. FVG sur VAL"></td>
       <td>${criteria.map((c) => `<label><input type="checkbox" class="j-crit" value="${c}" ${(t.criteres || []).includes(c) ? "checked" : ""}> ${c}</label>`).join("")}</td>
-      <td><input type="text" class="j-note" value="${t.note || ""}"></td></tr>`).join("");
-  document.querySelectorAll("#jtable tr[data-id]").forEach((tr) => tr.querySelectorAll("input").forEach((inp) => inp.onchange = async () => {
+      <td class="note-cell"><textarea class="j-note" rows="3" placeholder="ta lecture, ton ressenti…">${esc(t.note)}</textarea></td></tr>`).join("");
+  document.querySelectorAll("#jtable tr[data-id]").forEach((tr) => tr.querySelectorAll("input, textarea").forEach((inp) => inp.onchange = async () => {
     const body = { setup: tr.querySelector(".j-setup").value, note: tr.querySelector(".j-note").value,
       criteres: [...tr.querySelectorAll(".j-crit:checked")].map((x) => x.value) };
     await getJSON(`/api/journal/${tr.dataset.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
