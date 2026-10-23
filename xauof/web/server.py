@@ -22,7 +22,8 @@ from xauof.indicators.smc import atr as smc_atr
 from xauof.news.calendar import Calendar, load_calendar
 from xauof.web import journal as jr
 from xauof.web.orderflow_proxy import proxy_bars
-from xauof.web.setups import AlertCenter, qualify
+from xauof.strategy.instrument import load_instrument
+from xauof.web.setups import AlertCenter, qualify, trade_plan
 
 STATIC = Path(__file__).parent / "static"
 NY = "America/New_York"
@@ -58,6 +59,7 @@ class Hub:
     def __init__(self, cfg: dict, source):
         self.cfg, self.src = cfg, source
         self.alerts = AlertCenter()
+        self.inst = load_instrument(cfg)
         self.lock = threading.Lock()
         self._cache = (0.0, None)
         self._cal = (0.0, None)
@@ -108,6 +110,11 @@ class Hub:
         atr = float(smc_atr(m5, cfg["strategy"]["atr_period"]).iloc[-1]) if len(m5) >= cfg["strategy"]["atr_period"] else np.nan
         bid = snap["prix"]["bid"]
         setups = qualify(snap["zones"], levels, bid, atr, cfg["strategy"]["near_atr"])
+        equity = account["equity"] if account else cfg["account"]["initial_capital"]
+        budget = cfg["risk"]["risk_per_trade_pct"] / 100 * min(equity, cfg["account"]["initial_capital"])
+        spread = snap["prix"]["spread_pts"] * cfg["broker"]["point"]
+        for st in setups:
+            st["plan"] = trade_plan(st["zone"], levels, atr, spread, self.inst, budget)
         t_start = ny_time(day, cfg["strategy"]["entry_start"], NY)
         if t_start <= now <= ny_time(day, cfg["strategy"]["entry_end"], NY):     # pas d'alerte hors fenêtre d'entrée
             self.alerts.from_setups(setups, now, snap["news_blackout"])
@@ -151,7 +158,7 @@ class Hub:
             "niveaux_source": levels.get("source_day") if levels else None,
             "ib": ib, "zones": [zone_json(z) for z in snap["zones_actives"]],
             "setups": [{"zone": zone_json(s["zone"]), "niveaux": s["niveaux"], "contexte": s["contexte"],
-                        "etat": s["etat"]} for s in setups],
+                        "etat": s["etat"], "plan": s["plan"]} for s in setups],
             "orderflow": of_sum, "news": upcoming, "news_blackout": snap["news_blackout"],
             "news_cloture": snap["news_cloture"], "compte": snap["compte"],
             "limites": {"arret_interne": cfg["risk"]["daily_stop_usd"], "ftmo_jour": cfg["ftmo"]["daily_loss_limit_usd"]},

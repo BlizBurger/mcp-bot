@@ -4,7 +4,9 @@ minute avec EXACTEMENT la logique des alertes en direct (zones, qualify, dédoub
     python -m xauof.web.alert_stats                       # historique jusqu'au début du holdout
     python -m xauof.web.alert_stats --start 2025-06-01 --end 2026-01-01
 
-Compte des alertes, pas des gains : rien ici ne dit si ces setups sont rentables.
+Mesure aussi ce qu'auraient donné les plans entrée / SL / TP proposés avec les alertes
+(règles figées dans ALERTES_PLAN.md). Le holdout (à partir de validation.holdout_start)
+n'est pas touché par défaut.
 """
 from __future__ import annotations
 
@@ -17,14 +19,20 @@ import pandas as pd
 from xauof.assistant.snapshot import ny_time
 from xauof.indicators.smc import atr as smc_atr
 from xauof.strategy.zones import ZoneBook, ZoneDetector
-from xauof.web.setups import AlertCenter, qualify
+from xauof.strategy.instrument import load_instrument
+from xauof.web.setups import AlertCenter, qualify, trade_plan
 
 NY = "America/New_York"
 
 
-def replay_day(cfg: dict, xau_m1: pd.DataFrame, levels: dict, day: pd.Timestamp, calendar=None) -> list[dict]:
-    """Alertes qu'aurait envoyées l'interface ce jour-là (xau_m1 : bougies depuis le warm-up)."""
+def replay_day(cfg: dict, xau_m1: pd.DataFrame, levels: dict, day: pd.Timestamp, calendar=None,
+               inst=None) -> dict:
+    """Alertes qu'aurait envoyées l'interface ce jour-là (xau_m1 : bougies depuis le warm-up),
+    et le plan proposé à la première alerte de chaque zone, simulé jusqu'à sa sortie."""
     st, n, point = cfg["strategy"], cfg["news"], cfg["broker"]["point"]
+    inst = inst or load_instrument(cfg)
+    budget = cfg["risk"]["risk_per_trade_pct"] / 100 * cfg["account"]["initial_capital"]
+    plans: dict = {}
     t_start, t_end = (ny_time(day, st[k], NY) for k in ("entry_start", "entry_end"))
     tf = pd.Timedelta(st["zone_tf"])
     m5 = xau_m1[["open", "high", "low", "close"]].resample(tf).agg(
@@ -48,12 +56,63 @@ def replay_day(cfg: dict, xau_m1: pd.DataFrame, levels: dict, day: pd.Timestamp,
         blackout = calendar.blackout(close_t, n["blackout_before_min"], n["blackout_after_min"],
                                      n["currencies"]) if calendar is not None else None
         before = len(alerts.sent)
-        alerts.from_setups(qualify(book.zones, levels, float(bar["close"]), atr, st["near_atr"]), close_t, blackout)
+        setups = qualify(book.zones, levels, float(bar["close"]), atr, st["near_atr"])
+        for x in setups:
+            x["plan"] = trade_plan(x["zone"], levels, atr, bar["spread"] * point, inst, budget)
+            if x["zone"].id not in plans:
+                plans[x["zone"].id] = {"t0": close_t, "sens": x["zone"].direction, "news": bool(blackout),
+                                       "plan": x["plan"]}
+        alerts.from_setups(setups, close_t, blackout)
         for a in alerts.feed[:len(alerts.sent) - before]:      # les plus récentes sont en tête
             a["t"] = close_t
-    return [{"t": a["t"], "etape": "contact" if a["niveau"] == "alerte" else "pret",
-             "sens": "achat" if "ACHAT" in a["texte"] else "vente",
-             "news": "fenêtre news" in a["texte"], "texte": a["texte"]} for a in reversed(alerts.feed)]
+    events = [{"t": a["t"], "etape": "contact" if a["niveau"] == "alerte" else "pret",
+               "sens": "achat" if "ACHAT" in a["texte"] else "vente",
+               "news": "fenêtre news" in a["texte"], "texte": a["texte"]} for a in reversed(alerts.feed)]
+    t_flat = ny_time(day, st["flat_time"], NY)
+    for p in plans.values():
+        if "refus" not in p["plan"]:
+            p.update(simulate_plan(p["plan"], p["sens"], xau_m1[xau_m1.index >= p["t0"]], t_end, t_flat, inst, point))
+    return {"alertes": events, "plans": list(plans.values())}
+
+
+def simulate_plan(plan: dict, d: int, bars: pd.DataFrame, entry_deadline: pd.Timestamp, t_flat: pd.Timestamp,
+                  inst, point: float) -> dict:
+    """Ordre limite valable jusqu'à `entry_deadline`, puis SL / TP / clôture à `t_flat`.
+    Bougies bid + spread ; conventions prudentes : sur une même bougie le SL passe avant le TP,
+    et le TP n'est pas compté sur la bougie d'entrée. Slippage sur SL et clôture forcée."""
+    entry, sl, tp, slip = plan["entree"], plan["sl"], plan["tp"], inst.slippage
+    fill = None
+    for t, b in bars.iterrows():
+        ask = lambda x: x + b["spread"] * point  # noqa: E731
+        if fill is None:
+            if t >= entry_deadline:
+                return {"issue": "non rempli"}
+            if d > 0 and ask(b["low"]) <= entry:
+                fill = min(entry, ask(b["open"]))
+            elif d < 0 and b["high"] >= entry:
+                fill = max(entry, b["open"])
+            else:
+                continue
+            fill_t, first = t, True
+        else:
+            first = False
+        if t >= t_flat:
+            exit_, issue = (b["open"] - slip, "clôture 13:30") if d > 0 else (ask(b["open"]) + slip, "clôture 13:30")
+            break
+        if (d > 0 and b["low"] <= sl) or (d < 0 and ask(b["high"]) >= sl):
+            exit_, issue = sl - d * slip, "SL"
+            break
+        if not first and ((d > 0 and b["high"] >= tp) or (d < 0 and ask(b["low"]) <= tp)):
+            exit_, issue = tp, "TP"
+            break
+    else:
+        if fill is None:
+            return {"issue": "non rempli"}
+        last = bars.iloc[-1]
+        exit_, issue = (last["close"] if d > 0 else last["close"] + last["spread"] * point), "fin des données"
+    pnl = d * (exit_ - fill) * inst.value_per_price - inst.commission_rt
+    return {"issue": issue, "entree_reelle": fill, "t_entree": fill_t, "sortie": exit_,
+            "r": pnl / inst.loss_per_lot(entry, sl)}
 
 
 def summarize(events: list[dict], days: list[pd.Timestamp]) -> str:
@@ -90,6 +149,42 @@ def summarize(events: list[dict], days: list[pd.Timestamp]) -> str:
     return "\n".join(lines)
 
 
+def summarize_plans(plans: list[dict], n_weeks: int) -> str:
+    """Ce qu'auraient donné les plans (entrée / SL / TP) proposés avec les alertes."""
+    from xauof.strategy.run import bootstrap_ci
+
+    if not plans:
+        return "Aucun plan à mesurer."
+    df = pd.DataFrame(plans)
+    refused = df["plan"].apply(lambda p: "refus" in p)
+    lines = [f"\nPLANS PROPOSÉS ({len(df)} zones A+) : {refused.sum()} sans plan (RR insuffisant ou lot minimum), "
+             f"{(~refused).sum()} avec un plan"]
+    sim = df[~refused]
+    filled = sim[sim["issue"] != "non rempli"] if len(sim) else sim
+    if filled.empty:
+        return "\n".join(lines + ["Aucun ordre limite rempli."])
+    lines.append(f"Ordres limites remplis : {len(filled)} sur {len(sim)} ({len(filled) / len(sim):.0%}) · "
+                 f"{len(filled) / max(n_weeks, 1):.1f} trades par semaine")
+    lines.append("Issues : " + " · ".join(f"{k} {v}" for k, v in filled["issue"].value_counts().items()))
+    for label, part in (("tous", filled), ("hors fenêtre news", filled[~filled["news"]])):
+        if part.empty:
+            continue
+        lo, hi = bootstrap_ci(part["r"])
+        lines.append(f"R net moyen ({label}) : {part['r'].mean():+.3f} R par trade  [IC 95 % {lo:+.3f} ; {hi:+.3f}]  "
+                     f"· {len(part)} trades · gagnants {(part['r'] > 0).mean():.0%} · total {part['r'].sum():+.1f} R")
+    for sens, part in filled.groupby("sens"):
+        lines.append(f"  {'achats' if sens > 0 else 'ventes'} : {len(part)} trades · {part['r'].mean():+.3f} R")
+    lo, hi = bootstrap_ci(filled[~filled["news"]]["r"]) if (~filled["news"]).any() else (float("nan"),) * 2
+    verdict = ("POSITIF sur l'historique (borne basse de l'IC > 0) : à confirmer sur le holdout avant d'y croire."
+               if lo > 0 else
+               "NON VALIDÉ : l'intervalle de confiance contient 0 ou est négatif. Les niveaux restent indicatifs."
+               if hi > 0 else
+               "NÉGATIF : suivre ces plans à l'aveugle aurait perdu de l'argent sur l'historique.")
+    lines.append(f"Verdict (règle figée dans ALERTES_PLAN.md) : {verdict}")
+    lines.append("Coûts estimés inclus (commission, slippage sur SL) ; ordre limite rempli au prix ou mieux.")
+    return "\n".join(lines)
+
+
 def main() -> None:
     from xauof.config import load_config
     from xauof.news.calendar import load_calendar
@@ -104,7 +199,8 @@ def main() -> None:
     start, end = pd.Timestamp(args.start), pd.Timestamp(args.end)
     data = prepare(cfg, start, end)
     cal = load_calendar(cfg)
-    events, days, skipped = [], [], 0
+    events, plans, days, skipped = [], [], [], 0
+    inst = load_instrument(cfg)
     all_days = data["days"]
     for i, day in enumerate(all_days):
         if not (start <= day < end) or i == 0:
@@ -113,11 +209,15 @@ def main() -> None:
         if levels is None:
             skipped += 1
             continue
-        events += replay_day(cfg, day_data(cfg, data, day, levels, reason).xau, levels.as_dict(), day, cal)
+        res = replay_day(cfg, day_data(cfg, data, day, levels, reason).xau, levels.as_dict(), day, cal, inst)
+        events += res["alertes"]
+        plans += res["plans"]
         days.append(day)
         print(f"\r{day:%Y-%m-%d}  alertes : {len(events)}", end="", flush=True)
     print("\n")
     print(summarize(events, days))
+    weeks = pd.Series(1, index=pd.DatetimeIndex(days)).resample("W-FRI").size() if days else pd.Series()
+    print(summarize_plans(plans, int((weeks > 0).sum())))
     if skipped:
         print(f"\n{skipped} séance(s) ignorée(s) : niveaux de la veille indisponibles (données GC manquantes).")
 

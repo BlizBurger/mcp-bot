@@ -1,3 +1,4 @@
+import pytest
 import pandas as pd
 
 from xauof.strategy.zones import Zone
@@ -58,7 +59,9 @@ def test_replay_day_matches_live_alert_logic(monkeypatch):
     cfg = load_config()
     src, day, ny = DemoSource(cfg, speed=0.0), pd.Timestamp("2026-10-23"), "America/New_York"
     a, b = ny_time(day, cfg["strategy"]["warmup_start"], ny), ny_time(day, "13:35", ny)
-    ev = replay_day(cfg, src._bars[(src._bars.index >= a) & (src._bars.index < b)], src._levels, day)
+    res = replay_day(cfg, src._bars[(src._bars.index >= a) & (src._bars.index < b)], src._levels, day)
+    ev = res["alertes"]
+    assert res["plans"] and all("issue" in p or "refus" in p["plan"] for p in res["plans"])
     assert ev, "la journée démo contient des setups A+"
     lo, hi = ny_time(day, cfg["strategy"]["entry_start"], ny), ny_time(day, cfg["strategy"]["entry_end"], ny)
     assert all(lo <= e["t"] <= hi for e in ev)
@@ -67,3 +70,63 @@ def test_replay_day_matches_live_alert_logic(monkeypatch):
     assert len(keys) == len(set(keys))
     out = summarize(ev, [day])
     assert "par semaine" in out and "rentabilité" in out
+
+
+def _inst():
+    from xauof.config import load_config
+    from xauof.strategy.instrument import load_instrument
+
+    return load_instrument(load_config())
+
+
+def test_plan_buy_targets_first_level_at_min_rr():
+    p = su.trade_plan(zone(1, 89.8, 90.5), LV, atr=1.0, spread=0.3, inst=_inst(), budget_usd=50)
+    assert p["entree"] == 90.5 and p["sl"] == 89.55
+    assert p["tp"] == 94.9 and p["cible"] == "LVN"                # premier niveau à ≥ 1,5 R, 0,1 ATR avant
+    assert p["rr"] >= su.PLAN_MIN_RR and 0 < p["risque_usd"] <= 50 and p["lots"] > 0
+
+
+def test_plan_sell_accounts_for_spread_and_lists_obstacles():
+    p = su.trade_plan(zone(-1, 109.6, 110.3), LV, atr=1.0, spread=0.3, inst=_inst(), budget_usd=50)
+    assert p["entree"] == 109.6 and p["sl"] == 110.85               # au-dessus de la zone + spread + 0,25 ATR
+    assert p["tp"] == 106.4 and p["cible"].startswith("HVN")       # bord haut du HVN 104-106, + spread + 0,1 ATR
+    far = su.trade_plan(zone(-1, 109.6, 110.3), {**LV, "hvn": [], "lvn": [95.0, 108.5]}, 1.0, 0.3, _inst(), 50)
+    assert far["cible"] == "POC TPO" and "LVN" in far["obstacles"]
+
+
+def test_plan_refused_without_target_and_shown_in_alert(monkeypatch):
+    monkeypatch.setenv("XAUOF_NO_TELEGRAM", "1")
+    p = su.trade_plan(zone(1, 113.2, 113.8), LV, atr=1.0, spread=0.3, inst=_inst(), budget_usd=50)
+    assert "RR insuffisant" in p["refus"]
+    ac = su.AlertCenter()
+    s = su.qualify([zone(1, 89.8, 90.5, zid="b")], LV, price=95.0, atr=1.0, near_atr=0.5)
+    s[0]["plan"] = su.trade_plan(s[0]["zone"], LV, 1.0, 0.3, _inst(), 50)
+    ac.from_setups(s, T, None)
+    assert "SL 89.55" in ac.feed[0]["texte"] and "Non validé" in ac.feed[0]["texte"]
+
+
+def _bars(rows, start="2026-10-23 14:00"):
+    idx = pd.date_range(start, periods=len(rows), freq="1min", tz="UTC")
+    return pd.DataFrame(rows, columns=["open", "high", "low", "close", "spread"], index=idx)
+
+
+def test_simulate_plan_fill_tp_and_conservative_conventions():
+    from xauof.web.alert_stats import simulate_plan
+
+    inst, end, flat = _inst(), pd.Timestamp("2026-10-23 17:15", tz="UTC"), pd.Timestamp("2026-10-23 17:30", tz="UTC")
+    plan = {"entree": 100.0, "sl": 99.0, "tp": 102.0}
+    # achat : rempli quand l'ask (bid + 0,30) descend à 100 ; TP ignoré sur la bougie d'entrée
+    r = simulate_plan(plan, 1, _bars([[101, 101, 100.5, 100.8, 30], [100.5, 102.5, 99.6, 101, 30],
+                                      [101, 102.1, 100.9, 102, 30]]), end, flat, inst, 0.01)
+    assert r["issue"] == "TP" and r["t_entree"] == pd.Timestamp("2026-10-23 14:01", tz="UTC")
+    assert r["r"] == pytest.approx((2.0 * inst.value_per_price - inst.commission_rt) / inst.loss_per_lot(100, 99))
+    # SL et TP sur la même bougie : le SL l'emporte
+    r = simulate_plan(plan, 1, _bars([[100.2, 100.3, 99.6, 100, 30], [100, 102.5, 98.9, 100, 30]]), end, flat, inst, 0.01)
+    assert r["issue"] == "SL" and r["r"] < -0.95
+    # jamais rempli avant la limite d'entrée
+    assert simulate_plan(plan, 1, _bars([[101, 101.5, 100.8, 101, 30]]), end, flat, inst, 0.01)["issue"] == "non rempli"
+    # vente : rempli quand le bid monte à l'entrée, SL déclenché par l'ask
+    sell = {"entree": 100.0, "sl": 101.0, "tp": 98.0}
+    r = simulate_plan(sell, -1, _bars([[99.5, 100.1, 99.4, 99.9, 30], [99.9, 100.75, 99.8, 100.6, 30]]),
+                      end, flat, inst, 0.01)
+    assert r["issue"] == "SL"

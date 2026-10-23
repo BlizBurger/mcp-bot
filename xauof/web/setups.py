@@ -64,6 +64,63 @@ def qualify(zones: list, levels: Optional[dict], price: float, atr: float, near_
     return out
 
 
+# Plan proposé avec chaque setup (règles figées dans ALERTES_PLAN.md, mesurées par alert_stats)
+PLAN_MIN_RR = 1.5          # TP = premier niveau d'hier à au moins 1,5 R
+PLAN_SL_ATR = 0.25         # marge du SL au-delà de la zone, en ATR M5
+PLAN_TP_ATR = 0.10         # TP placé un peu AVANT le niveau visé
+
+
+def level_points(levels: dict) -> list[tuple[str, float]]:
+    """Tous les prix de niveaux d'hier (HVN et single prints : leurs deux bords)."""
+    pts = [("POC vol", levels["poc_v"]), ("VAH vol", levels["vah_v"]), ("VAL vol", levels["val_v"]),
+           ("POC TPO", levels["poc_t"]), ("VAH TPO", levels["vah_t"]), ("VAL TPO", levels["val_t"])]
+    pts += [("LVN", v) for v in levels["lvn"]]
+    for name, key in (("HVN", "hvn"), ("single prints", "singles")):
+        for a, b in levels[key]:
+            pts += [(f"{name} {a:.2f}-{b:.2f}", a), (f"{name} {a:.2f}-{b:.2f}", b)]
+    return pts
+
+
+def trade_plan(zone, levels: dict, atr: float, spread: float, inst, budget_usd: float) -> dict:
+    """Entrée limite au bord de la zone, SL au-delà (+ marge), TP avant le premier niveau d'hier
+    à au moins PLAN_MIN_RR. Prix bid ; une vente se clôture à l'ask, d'où le spread côté vente."""
+    from xauof.strategy.instrument import size_position
+
+    d = zone.direction
+    if d > 0:
+        entry, sl = zone.high, zone.low - PLAN_SL_ATR * atr
+    else:
+        entry, sl = zone.low, zone.high + spread + PLAN_SL_ATR * atr
+    risk = abs(entry - sl)
+    cands = []
+    for name, p in level_points(levels):
+        tp = p - PLAN_TP_ATR * atr if d > 0 else p + spread + PLAN_TP_ATR * atr
+        if d * (tp - entry) >= PLAN_MIN_RR * risk:
+            cands.append((abs(tp - entry), round(tp, 2), name))
+    if not cands:
+        return {"refus": f"pas de niveau d'hier à {PLAN_MIN_RR} R ou plus (RR insuffisant)"}
+    _, tp, target = min(cands)
+    obstacles = sorted({n for n, p in level_points(levels) if 0 < d * (p - entry) < d * (tp - entry)
+                        and abs(p - entry) > risk * 0.25 and n != target})
+    size = size_position(inst, d, entry, sl, tp, budget_usd)
+    if size.refused:
+        return {"refus": size.refused}
+    return {"entree": round(entry, 2), "sl": round(sl, 2), "tp": tp, "cible": target,
+            "rr": round(abs(tp - entry) / risk, 2), "lots": size.lots, "risque_usd": round(size.risk_usd, 2),
+            "obstacles": obstacles}
+
+
+def plan_text(plan: Optional[dict]) -> str:
+    if not plan:
+        return ""
+    if "refus" in plan:
+        return f" — Plan : aucun ({plan['refus']})"
+    obs = f" ; obstacles avant le TP : {', '.join(plan['obstacles'])}" if plan["obstacles"] else ""
+    return (f"\nPlan : entrée {plan['entree']:.2f} (ordre limite) · SL {plan['sl']:.2f} · "
+            f"TP {plan['tp']:.2f} (avant {plan['cible']}) · {plan['rr']:.1f} R · {plan['lots']:.2f} lot "
+            f"≈ {plan['risque_usd']:.0f} $ de risque{obs}. Non validé : à toi de confirmer.")
+
+
 @dataclass
 class AlertCenter:
     """Alertes dédupliquées (une par zone et par étape), envoyées à Telegram si configuré."""
@@ -87,6 +144,7 @@ class AlertCenter:
                     f"({s['contexte']})")
             if blackout:
                 base += f" ⚠ fenêtre news : {blackout}"
+            base += plan_text(s.get("plan"))
             if s["etat"] == "en attente du prix":
                 self.push(f"{z.id}:pret", t, f"Setup A+ en préparation : {base}", "info")
             else:

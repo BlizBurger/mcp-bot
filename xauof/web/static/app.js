@@ -137,6 +137,7 @@ function render(s) {
       <div class="t">${x.zone.sens > 0 ? "▲ ACHAT" : "▼ VENTE"} · ${x.zone.type} ${fmt(x.zone.bas)}–${fmt(x.zone.haut)}</div>
       <div class="d">${x.etat} · ${x.contexte}</div>
       <div>${x.niveaux.map((l) => `<span class="chip">${l}</span>`).join("")}</div>
+      ${planHtml(x.plan)}
     </div>`).join("") : `<div class="empty">aucun setup A+ pour l'instant</div>`;
   $("alerts").innerHTML = (s.alertes || []).length ? s.alertes.map((x) =>
     `<div class="it ${x.niveau}"><time>${new Date(x.t).toLocaleTimeString("fr-FR", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })}</time>${x.texte}</div>`).join("")
@@ -153,6 +154,13 @@ function render(s) {
   $("zones").innerHTML = (s.zones || []).length ? s.zones.map((z) => `<div class="${z.sens > 0 ? "up" : "down"}">${z.sens > 0 ? "▲" : "▼"} ${z.type} ${fmt(z.bas)}–${fmt(z.haut)}</div>`).join("") : "aucune";
   $("news").innerHTML = (s.news || []).map((x) => `<div class="it"><time>${x.heure}</time>${x.annonce}</div>`).join("") || `<div class="empty">—</div>`;
   setLevelLines(); drawOverlay();
+}
+function planHtml(p) {
+  if (!p) return "";
+  if (p.refus) return `<div class="plan muted">Plan : aucun (${p.refus})</div>`;
+  return `<div class="plan mono"><span>ENTRÉE <b>${fmt(p.entree)}</b> limite</span><span class="down">SL <b>${fmt(p.sl)}</b></span>
+    <span class="up">TP <b>${fmt(p.tp)}</b> <i>avant ${p.cible}</i></span><span>${fmt(p.rr, 1)} R · <b>${fmt(p.lots)}</b> lot ≈ ${fmt(p.risque_usd, 0)} $</span>
+    ${p.obstacles.length ? `<span class="muted">obstacles : ${p.obstacles.join(", ")}</span>` : ""}<span class="muted">non validé : à toi de confirmer</span></div>`;
 }
 function banner(text, cls) { const b = $("banner"); b.textContent = text; b.className = "banner " + (cls || ""); }
 
