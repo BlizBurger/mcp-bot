@@ -152,6 +152,11 @@ def summarize(eng: Engine, cfg: dict) -> str:
         lines.append(f"  excursions : MFE médiane {tr['mfe_r'].median():+.2f} R, MAE médiane {tr['mae_r'].median():+.2f} R ; "
                      f"{(tr['mfe_r'] >= 1).mean():.0%} des trades atteignent +1 R, "
                      f"{(tr['mfe_r'] >= tr['tp_r']).mean():.0%} la distance du TP (R:R visé médian {tr['tp_r'].median():.2f})")
+        fr = {k: (tr[f"cout_{k}"] / tr["risk_usd"]).mean() for k in ("spread", "slippage", "commission")}
+        lo, hi = bootstrap_ci(tr["r_avant_frais"])
+        lines.append(f"  frais moyens : {sum(fr.values()):.3f} R par trade (spread {fr['spread']:.3f}, slippage "
+                     f"{fr['slippage']:.3f}, commission {fr['commission']:.3f}) ; R moyen AVANT frais "
+                     f"{tr['r_avant_frais'].mean():+.3f} [IC95 {lo:+.2f} ; {hi:+.2f}]")
         losers = tr[tr["pnl"] <= 0]
         if len(losers):
             lines.append(f"  perdants : {(losers['mfe_r'] >= 1).mean():.0%} étaient passés par +1 R, "
@@ -179,6 +184,14 @@ def trades_frame(eng: Engine) -> pd.DataFrame:
     tr["mfe_r"] = [t.excursion_r(t.best) for t in eng.trades]
     tr["mae_r"] = [t.excursion_r(t.worst) for t in eng.trades]
     tr["tp_r"] = [t.excursion_r(t.tp) for t in eng.trades]
+    # frais estimés en USD : spread (un aller-retour), slippage (entrée au marché ; sortie
+    # au marché ou sur stop, pas sur TP / partiel limites), commission
+    vpu, slip = eng.inst.value_per_price, eng.inst.slippage
+    tr["cout_spread"] = tr["entry_spread"] * vpu * tr["lots_initial"]
+    exit_market = ~tr["exit_reason"].str.startswith("TP")
+    tr["cout_slippage"] = slip * vpu * (tr["lots_initial"] + tr["lots"].where(exit_market, 0.0))
+    tr["cout_commission"] = tr["commission"]
+    tr["r_avant_frais"] = (tr["pnl"] + tr["cout_spread"] + tr["cout_slippage"] + tr["cout_commission"]) / tr["risk_usd"]
     return tr
 
 

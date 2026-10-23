@@ -84,12 +84,15 @@ class Position:
     partial_done: bool = False
     partial_at: Optional[pd.Timestamp] = None
     realized: float = 0.0             # gain brut déjà encaissé (partiel)
+    sl_initial: Optional[float] = None  # stop d'origine (le stop peut passer au prix d'entrée)
+    entry_spread: float = 0.0         # spread de la bougie d'entrée ($ par once) : coût d'un aller-retour
 
     def excursion_r(self, price: Optional[float]) -> Optional[float]:
-        """Excursion en R (distance entrée → SL = 1 R)."""
+        """Excursion en R (distance entrée → stop D'ORIGINE = 1 R)."""
         if price is None:
             return None
-        return self.direction * (price - self.entry) / abs(self.entry - self.sl)
+        sl = self.sl if self.sl_initial is None else self.sl_initial
+        return self.direction * (price - self.entry) / abs(self.entry - sl)
 
 
 @dataclass
@@ -464,7 +467,8 @@ class Engine:
             self.log(s, "entree_refusee", motifs=why, **detail)
             return
         pos = Position(z.id, p.scenario, direction, sz.lots, entry, sl, tgt[0], s, sz.risk_usd, sz.rr_net, tgt[1],
-                       lots_initial=sz.lots)
+                       lots_initial=sz.lots, sl_initial=sl,
+                       entry_spread=spread_pts * inst.point)
         if self.v2:
             v2 = self.s["v2"]
             plots = inst.round_lots_down(sz.lots * v2["partial_fraction"])

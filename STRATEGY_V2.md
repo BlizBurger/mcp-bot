@@ -89,3 +89,30 @@ prix à l'intérieur d'une minute. On tranche donc toujours dans le sens défavo
   Fait le 2026-10-23 : `calendar/history/` (NFP, CPI, PPI, JOLTS, PIB, PCE, FOMC).
   Ne couvre pas les ventes au détail, l'ISM ni les inscriptions au chômage.
 - Commission FTMO réelle relevée dans MT5 (actuellement estimée à 6 $/lot).
+
+## Verdict sur la période d'étude — V2 ABANDONNÉE
+
+Backtests `--research`, oct. 2024 → juin 2026, 446 séances, filtre news réel :
+
+| Variante | Trades | Gagnants | R moyen [IC95] |
+|---|---|---|---|
+| V2_DF (delta + espace libre) | 282 | 43,6 % | −0,149 [−0,26 ; −0,03] |
+| V2_D (delta) | 380 | 44,2 % | −0,141 [−0,24 ; −0,04] |
+| V2_PF (témoin prix + espace libre) | 640 | 44,2 % | −0,144 [−0,22 ; −0,06] |
+
+Application de la règle figée :
+1. Choix du filtre : écart V2_DF / V2_D = 0,008 R < 0,05 R → **V2_D** retenue.
+2. Garde-fou : borne haute de l'IC95 de V2_D = −0,04 < 0 → **significativement
+   perdante → V2 abandonnée**. La période réservée n'est pas utilisée.
+
+Enseignements :
+- le delta GC, sous cette forme, n'apporte rien (V2_D ≈ témoin V2_PF) ;
+- le filtre « espace libre » n'apporte rien ;
+- 54 % des perdants ne dépassent jamais +0,25 R : la direction des entrées est
+  proche du hasard ;
+- hypothèse à mesurer : les frais (spread, slippage, commission) pèsent lourd
+  face à des stops M5 courts (décomposition ajoutée au rapport).
+
+Note : les lignes « excursions » de ces rapports étaient faussées pour les trades
+avec partiel (R calculé avec le stop ramené au prix d'entrée). Corrigé ensuite ;
+le R moyen et le verdict n'en dépendent pas.

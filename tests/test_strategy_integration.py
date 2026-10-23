@@ -240,3 +240,24 @@ def test_v2_without_filter_does_not_need_previous_levels(market):
         eng_f.run_day(dd)
     assert eng.trades and not eng_f.trades
 
+
+
+def test_excursions_use_initial_stop_after_breakeven(market):
+    import numpy as np
+
+    cfg, data = market
+    eng = run(cfg, data, "V2_P")
+    tr = R.trades_frame(eng)
+    assert tr["partial_done"].any()
+    assert np.isfinite(tr[["mfe_r", "mae_r", "tp_r"]].to_numpy(dtype=float)).all()
+    assert (tr["tp_r"].round(6) == 2.0).all()
+
+
+def test_cost_decomposition_adds_up(market):
+    cfg, data = market
+    eng = run(cfg, data, "V2_P")
+    tr = R.trades_frame(eng)
+    costs = tr["cout_spread"] + tr["cout_slippage"] + tr["cout_commission"]
+    assert (costs > 0).all()
+    assert (tr["r_avant_frais"] > tr["r"]).all()
+    assert "frais moyens" in R.summarize(eng, cfg)
