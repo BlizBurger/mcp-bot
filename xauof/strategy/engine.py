@@ -30,7 +30,7 @@ from xauof.strategy import context as ctx
 from xauof.strategy.instrument import Instrument, size_position
 from xauof.strategy.risk import Account, spread_blocked
 from xauof.strategy.scenarios import ScenarioTracker
-from xauof.strategy.zones import ZoneBook, ZoneDetector
+from xauof.strategy.zones import Zone, ZoneBook, ZoneDetector
 
 VARIANTS = {
     # V1 : scénarios obligatoires, objectif structurel
@@ -44,6 +44,8 @@ VARIANTS = {
     "V2_D": {"score": False, "trigger": "delta", "v2": True, "space_filter": False},
     "V2_PF": {"score": False, "trigger": "price", "v2": True, "space_filter": True},
     "V2_P": {"score": False, "trigger": "price", "v2": True, "space_filter": False},
+    # V3 (STRATEGY_V3.md) : échec de cassure de l'Initial Balance XAUUSD, sans GC
+    "V3": {"score": False, "trigger": "none", "v3": True},
 }
 
 
@@ -133,8 +135,12 @@ class Engine:
             raise ValueError("variante C_ABS : activer strategy.trigger.absorption_enabled")
         self.v = VARIANTS[self.variant]
         self.v2 = bool(self.v.get("v2"))
-        self.needs_levels = not self.v2 or bool(self.v.get("space_filter"))
+        self.v3 = bool(self.v.get("v3"))
+        self.needs_levels = not (self.v2 or self.v3) or bool(self.v.get("space_filter"))
+        self.uses_gc = not self.v3
         self.s = self.cfg["strategy"]
+        # gestion « partiel + break-even » (V2, V3)
+        self.mgmt = self.s["v2"] if self.v2 else (self.s["v3"] if self.v3 else None)
         self.tz = self.s["timezone"]
 
     # ------------------------------------------------------------------ journal
@@ -165,6 +171,8 @@ class Engine:
         self.atr_now = np.nan
         self.ib = None
         self.expired = False
+        self.ib_xau = None                       # V3 : IB XAUUSD (bid)
+        self.v3_side = {1: {"state": "attente"}, -1: {"state": "attente"}}
         self.xau_m5 = d.xau[["open", "high", "low", "close"]].resample(self.tf).agg(
             {"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
         self.gc_vol_m5 = d.gc["volume"].resample(self.tf).sum()
@@ -176,7 +184,7 @@ class Engine:
         if d.levels is not None:
             val, _, vah = d.levels.value_area(s["value_area_source"])
             self.scen = ScenarioTracker(self.cfg, val, vah, self.t_start)
-        else:
+        elif self.needs_levels:
             self.log(self.t_start, "jour_bloque", motif=f"niveaux de la séance précédente indisponibles : {d.levels_reason}")
         self.cal_ok = self.calendar.covers(d.xau.index[0], self.t_flat)
         if not self.cal_ok:
@@ -211,7 +219,7 @@ class Engine:
         if self.position is not None:
             self._manage(j, s, bar)
 
-        if self.t_start <= s < self.t_end and not self.expired:
+        if self.t_start <= s < self.t_end and not self.expired and not self.v3:
             ask_high = bar["high"] + bar["spread"] * inst.point
             for z in self.book.contacts(s, bar["low"], ask_high):
                 self._on_contact(z, s, j)
@@ -241,6 +249,8 @@ class Engine:
             return
         a = smc_atr(m5, self.s["atr_period"])
         self.atr_now = float(a.iloc[-1]) if len(m5) >= self.s["atr_period"] else np.nan
+        if self.v3:
+            return self._v3_on_m5_close(m5, close_t)
         spread_price = bar["spread"] * self.inst.point
         for z in self.detector.on_m5_close(m5, spread_price):
             self.book.add(z)
@@ -252,6 +262,61 @@ class Engine:
             self.ib = ctx.ib_from_gc(self.d.gc, self.t_start, self.ib_end)
             if self.ib:
                 self.log(close_t, "ib", high_gc=self.ib["high"], low_gc=self.ib["low"], contract=self.ib["contract"])
+
+    # ------------------------------------------------------------------ V3
+    def _v3_on_m5_close(self, m5: pd.DataFrame, close_t: pd.Timestamp) -> None:
+        """Échec de cassure de l'IB XAUUSD (bid), évalué à chaque clôture M5 après 09:20."""
+        if self.ib_xau is None:
+            if close_t < self.ib_end:
+                return
+            w = self.d.xau[(self.d.xau.index >= self.t_start) & (self.d.xau.index < self.ib_end)]
+            if w.empty:
+                self.ib_xau = {"high": np.nan, "low": np.nan}
+                self.log(close_t, "jour_bloque", motif="IB XAUUSD indisponible (aucune bougie 08:20-09:20)")
+                return
+            self.ib_xau = {"high": float(w["high"].max()), "low": float(w["low"].min())}
+            self.log(close_t, "ib_xau", high=self.ib_xau["high"], low=self.ib_xau["low"])
+            return                                  # la bougie 09:15-09:20 fait partie de l'IB
+        ib = self.ib_xau
+        if np.isnan(ib["high"]) or close_t > self.t_end:
+            return
+        bar = m5.iloc[-1]
+        win = self.s["v3"]["failure_window_m5"]
+        for side, bound in ((1, ib["high"]), (-1, ib["low"])):     # côté haut, côté bas
+            st = self.v3_side[side]
+            outside = side * (bar["close"] - bound) > 0
+            if st["state"] == "attente":
+                if outside:
+                    st.update(state="cassure", since=close_t, bars=0,
+                              extreme=bar["high"] if side > 0 else bar["low"])
+                    self.log(close_t, "v3_cassure", cote="haut" if side > 0 else "bas", borne=bound,
+                             cloture=float(bar["close"]))
+                continue
+            if st["state"] != "cassure":
+                continue
+            st["bars"] += 1
+            st["extreme"] = max(st["extreme"], bar["high"]) if side > 0 else min(st["extreme"], bar["low"])
+            if not outside:
+                st["state"] = "termine"
+                direction = -side                                   # cassure haute ratée → vente
+                lo, hi = (bound, st["extreme"]) if side > 0 else (st["extreme"], bound)
+                z = Zone(f"{self.d.day:%Y-%m-%d}-IBF-{'haut' if side > 0 else 'bas'}", "IBF", direction,
+                         float(lo), float(hi), close_t,
+                         meta={"ib_high": ib["high"], "ib_low": ib["low"], "cassure": str(st["since"]),
+                               "bougies_dehors": st["bars"]})
+                z.set(close_t, "detected", "échec de cassure de l'IB")
+                self.book.zones.append(z)
+                if self.pending is not None or self.position is not None:
+                    z.set(close_t, "consumed", "position ou ordre déjà en cours")
+                    self.log(close_t, "refus", zone_id=z.id, motif="position ou ordre déjà en cours")
+                    continue
+                z.set(close_t, "ordered", "signal V3")
+                self.pending = Pending(z, "v3_ibf", close_t, {"cassure": str(st["since"]),
+                                                              "extreme": float(st["extreme"])})
+                self.log(close_t, "confirmation", zone_id=z.id, scenario="v3_ibf", trigger=self.pending.trigger_info)
+            elif st["bars"] >= win:
+                st["state"] = "termine"
+                self.log(close_t, "v3_cassure_acceptee", cote="haut" if side > 0 else "bas")
 
     # ------------------------------------------------------------------ garde-fous
     def _basis_now(self, t: pd.Timestamp) -> tuple[Optional[dict], str]:
@@ -298,12 +363,14 @@ class Engine:
                             r["spread_filter_min_obs"], r["spread_filter_mult"])
         if sb:
             why.append(sb)
-        _, reason = self._basis_now(t)
-        if reason:
-            why.append(reason)
-        gc_before = self.d.gc.index[self.d.gc.index < t]
-        if len(gc_before) == 0 or (t - gc_before[-1]) / pd.Timedelta(minutes=1) - 1 > self.s["data_guards"]["max_gc_staleness_min"]:
-            why.append("flux GC périmé ou absent")
+        if self.uses_gc:
+            _, reason = self._basis_now(t)
+            if reason:
+                why.append(reason)
+            gc_before = self.d.gc.index[self.d.gc.index < t]
+            if len(gc_before) == 0 or (t - gc_before[-1]) / pd.Timedelta(minutes=1) - 1 > \
+                    self.s["data_guards"]["max_gc_staleness_min"]:
+                why.append("flux GC périmé ou absent")
         if np.isnan(self.atr_now):
             why.append("ATR M5 indisponible")
         return why
@@ -423,7 +490,14 @@ class Engine:
             why.append("prix exécutable déjà au-delà du SL")
         lv = self.d.levels
         risk_px = direction * (entry - sl)
-        if self.v2:
+        if self.v3:
+            ib = self.ib_xau
+            mid = (ib["high"] + ib["low"]) / 2
+            tgt = (ib["low"] if direction < 0 else ib["high"], "borne opposée de l'IB") if risk_px > 0 else None
+            rr1 = direction * (mid - entry) / risk_px if risk_px > 0 else -1.0
+            if rr1 < self.s["v3"]["min_first_target_r"]:
+                why.append(f"milieu de l'IB à {rr1:.2f} R (< {self.s['v3']['min_first_target_r']:g} R)")
+        elif self.v2:
             v2 = self.s["v2"]
             tgt = (entry + direction * v2["target_r"] * risk_px, f"{v2['target_r']:g} R") if risk_px > 0 else None
             if self.v["space_filter"] and lv is not None and risk_px > 0:
@@ -449,7 +523,7 @@ class Engine:
             if sz.refused:
                 why.append(sz.refused)
             else:
-                if sz.rr_net < self.s["min_rr_net"]:
+                if sz.rr_net < self.s["min_rr_net"] and not self.v3:
                     why.append(f"R:R net {sz.rr_net:.2f} < {self.s['min_rr_net']}")
                 if sz.risk_usd > a.remaining_daily(equity):
                     why.append(f"perte au SL {sz.risk_usd:.2f} > budget journalier restant {a.remaining_daily(equity):.2f}")
@@ -469,12 +543,12 @@ class Engine:
         pos = Position(z.id, p.scenario, direction, sz.lots, entry, sl, tgt[0], s, sz.risk_usd, sz.rr_net, tgt[1],
                        lots_initial=sz.lots, sl_initial=sl,
                        entry_spread=spread_pts * inst.point)
-        if self.v2:
-            v2 = self.s["v2"]
-            plots = inst.round_lots_down(sz.lots * v2["partial_fraction"])
+        if self.mgmt is not None:
+            plots = inst.round_lots_down(sz.lots * self.mgmt["partial_fraction"])
             rest = round(sz.lots - plots, 8)
             if plots >= inst.volume_min and rest >= inst.volume_min:
-                pos.partial_level = entry + direction * v2["partial_r"] * risk_px
+                pos.partial_level = ((self.ib_xau["high"] + self.ib_xau["low"]) / 2 if self.v3
+                                     else entry + direction * self.mgmt["partial_r"] * risk_px)
                 pos.partial_lots = plots
             else:
                 detail["partiel"] = f"aucun : volume {sz.lots} trop petit pour être fractionné"
@@ -558,7 +632,7 @@ class Engine:
         pos.commission += half
         pos.lots = round(pos.lots - pos.partial_lots, 8)
         pos.partial_done, pos.partial_at = True, t
-        if self.s["v2"]["breakeven_after_partial"]:
+        if self.mgmt["breakeven_after_partial"]:
             pos.sl = pos.entry
         self.log(t, "partiel", zone_id=pos.zone_id, prix=price, lots=pos.partial_lots, gain_brut=round(gross, 2),
                  lots_restants=pos.lots, nouveau_sl=pos.sl, solde=round(a.balance, 2))

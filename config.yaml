@@ -143,6 +143,11 @@ strategy:
     partial_fraction: 0.5         # ... de 50 % de la position (arrondi vers le bas)
     breakeven_after_partial: true # stop du reste ramené au prix d'entrée
     space_filter_r: 1.0           # variantes *F : refus si un niveau de la veille est avant +1 R
+  v3:                             # STRATEGY_V3.md (figée avant tout test)
+    failure_window_m5: 6          # retour dans l'IB au plus 6 bougies M5 après la cassure
+    partial_fraction: 0.5         # 50 % au milieu de l'IB
+    breakeven_after_partial: true
+    min_first_target_r: 1.0       # le milieu de l'IB doit être à >= 1 R de l'entrée
   data_guards:
     max_gc_staleness_min: 2       # dernière bougie GC trop ancienne → pas d'entrée
     max_unclassified_share: 0.05  # part du volume GC sans côté agresseur tolérée (delta)

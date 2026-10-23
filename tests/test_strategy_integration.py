@@ -261,3 +261,34 @@ def test_cost_decomposition_adds_up(market):
     assert (costs > 0).all()
     assert (tr["r_avant_frais"] > tr["r"]).all()
     assert "frais moyens" in R.summarize(eng, cfg)
+
+
+def test_v3_invariants_on_synthetic_market(market):
+    cfg, data = market
+    eng = run(cfg, data, "V3")
+    entries = [r for r in eng.journal if r["type"] == "entree"]
+    ibs = {r["t"][:10]: r for r in eng.journal if r["type"] == "ib_xau"}
+    assert entries, "le marché de test doit produire des signaux V3"
+    tz = cfg["strategy"]["timezone"]
+    for r in entries:
+        local = pd.Timestamp(r["t"]).tz_convert(tz)
+        assert "09:20" < local.strftime("%H:%M") <= "13:15"
+        ib = ibs[r["t"][:10]]
+        mid = (ib["high"] + ib["low"]) / 2
+        assert r["partiel_niveau"] in (None, pytest.approx(mid))
+        assert r["tp"] == pytest.approx(ib["low"] if r["direction"] < 0 else ib["high"])
+        risk = r["direction"] * (r["entree"] - r["sl"])
+        assert r["direction"] * (mid - r["entree"]) >= cfg["strategy"]["v3"]["min_first_target_r"] * risk - 1e-9
+    ibf = pd.Series([r["zone_id"] for r in eng.journal if r["type"] == "zone" and r["kind"] == "IBF"])
+    assert len(ibf) >= len(entries) and ibf.is_unique                           # un signal par côté et par jour
+
+
+def test_v3_no_lookahead(market):
+    cfg, data = market
+    full = run(cfg, data, "V3")
+    cut = pd.Timestamp("2026-03-11 16:00", tz="UTC")
+    trunc = {k: (v[v.index < cut] if isinstance(v, pd.DataFrame) else v) for k, v in data.items()}
+    part = run(cfg, trunc, "V3")
+    keep = {"v3_cassure", "v3_cassure_acceptee", "confirmation", "entree", "entree_refusee", "ib_xau"}
+    sel = lambda eng: [r for r in eng.journal if r["type"] in keep and pd.Timestamp(r["t"]) < cut]  # noqa: E731
+    assert len(sel(full)) > 5 and sel(full) == sel(part)

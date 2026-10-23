@@ -91,8 +91,10 @@ python -m xauof.news.calendar --status      # couverture et prochaines annonces
 ## Moteur de stratégie (phase 4)
 
 Règles complètes, hypothèses et limites : [STRATEGY.md](STRATEGY.md) (V1) et
-[STRATEGY_V2.md](STRATEGY_V2.md) (V2 figée : zones + delta GC, partiel à +1 R,
-break-even, objectif 2 R ; variantes V2_DF, V2_D, V2_PF, V2_P).
+[STRATEGY_V2.md](STRATEGY_V2.md) (V2 : zones + delta GC, partiel à +1 R, break-even,
+objectif 2 R — abandonnée, R moyen −0,14 [IC95 −0,24 ; −0,04]) et
+[STRATEGY_V3.md](STRATEGY_V3.md) (V3 figée : échec de cassure de l'Initial Balance,
+variante `V3`).
 Simulation uniquement : aucun ordre réel n'est passé.
 
 ```bash

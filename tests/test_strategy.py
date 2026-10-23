@@ -411,3 +411,78 @@ def test_obstacle_before_space_filter():
     assert ctx.obstacle_before(1, 101.5, 103.5, lv) is None   # POC TPO 101 derrière, HVN à 104 au-delà
     assert ctx.obstacle_before(-1, 108.0, 105.5, lv) == (106.0, "HVN 104.00-106.00")
 
+
+
+# --------------------------------------------------------------------------- V3
+
+def _v3_day(cfg, path):
+    """Séance XAUUSD construite à la main : path = [(heure NY 'HH:MM', open, high, low, close), ...]
+    (une entrée par minute à partir de 04:00 ; les minutes absentes répètent la précédente)."""
+    from xauof.strategy.engine import DayData
+
+    day = pd.Timestamp("2026-09-15")
+    t0 = (day + pd.Timedelta("04:00:00")).tz_localize("America/New_York")
+    minutes = pd.date_range(t0, t0 + pd.Timedelta("9h40min"), freq="1min", inclusive="left")
+    spec = {pd.Timestamp(f"2026-09-15 {hm}").tz_localize("America/New_York"): v for hm, *v in path}
+    rows, last = [], (105.0, 105.2, 104.8, 105.0)
+    for m in minutes:
+        last = tuple(spec.get(m, (last[3], last[3] + 0.2, last[3] - 0.2, last[3])))
+        rows.append(last)
+    xau = pd.DataFrame(rows, columns=["open", "high", "low", "close"], index=minutes.tz_convert("UTC"))
+    xau["spread"] = 30
+    empty_gc = pd.DataFrame(columns=["open", "high", "low", "close", "volume", "buy", "sell", "delta",
+                                     "instrument_id"], index=pd.DatetimeIndex([], tz="UTC"))
+    empty_b = pd.DataFrame(columns=["basis", "basis_ref", "bruit", "contract"], index=pd.DatetimeIndex([], tz="UTC"))
+    return DayData(day, xau, empty_gc, empty_b, None, "test")
+
+
+def _v3_engine(cfg):
+    cfg["news"]["missing_calendar"] = "ignore_backtest_only"
+    return Engine(cfg, "V3", load_instrument(cfg), Account.from_config(cfg), Calendar.empty(), SimExecutor())
+
+
+def test_v3_failed_ib_break_short_partial_then_target(cfg):
+    path = [("08:20", 105, 110, 100, 105)]                                   # IB 100 - 110
+    path += [(f"09:{m:02d}", 110.5, 112, 110.4, 111) for m in range(20, 25)]   # M5 09:20 clôture 111 : cassure
+    path += [(f"09:{m:02d}", 110, 111.5, 108.8, 109) for m in range(25, 30)]   # M5 09:25 clôture 109 : échec
+    path += [("09:30", 109, 109.1, 107, 107.5), ("09:35", 107, 107.2, 104.5, 105)]   # partiel au milieu (105)
+    path += [("09:50", 101, 101.2, 99.5, 100)]                                 # objectif : bas de l'IB (100)
+    eng = _v3_engine(cfg)
+    eng.run_day(_v3_day(cfg, path))
+    assert [r["type"] for r in eng.journal if r["type"].startswith("v3_")] == ["v3_cassure"]
+    entry = next(r for r in eng.journal if r["type"] == "entree")
+    assert entry["direction"] == -1 and entry["entree"] == pytest.approx(109 - 0.10)
+    assert entry["sl"] > 112 and entry["tp"] == 100 and entry["partiel_niveau"] == 105
+    tr = eng.trades[-1]
+    assert tr.partial_done and tr.exit_reason == "TP (après partiel)"
+    assert pd.Timestamp(entry["t"]) == pd.Timestamp("2026-09-15 09:30", tz="America/New_York")
+
+
+def test_v3_accepted_break_gives_no_trade(cfg):
+    path = [("08:20", 105, 110, 100, 105)]
+    path += [(f"09:{m:02d}", 110.5, 112, 110.4, 111) for m in range(20, 60)]  # reste dehors 40 min
+    eng = _v3_engine(cfg)
+    eng.run_day(_v3_day(cfg, path))
+    assert any(r["type"] == "v3_cassure_acceptee" for r in eng.journal)
+    assert not eng.trades and not any(r["type"] == "entree" for r in eng.journal)
+
+
+def test_v3_refuses_when_ib_middle_is_too_close(cfg):
+    path = [("08:20", 105, 110, 100, 105)]
+    path += [(f"09:{m:02d}", 110.5, 118, 110.4, 111) for m in range(20, 25)]   # extrême 118 : stop lointain
+    path += [(f"09:{m:02d}", 110, 111.5, 108.8, 109) for m in range(25, 30)]
+    eng = _v3_engine(cfg)
+    eng.run_day(_v3_day(cfg, path))
+    ref = next(r for r in eng.journal if r["type"] == "entree_refusee")
+    assert any(m.startswith("milieu de l'IB") for m in ref["motifs"])
+    assert not eng.trades
+
+
+def test_v3_one_signal_per_side(cfg):
+    path = [("08:20", 105, 110, 100, 105)]
+    for start in (20, 40):                                                     # deux cassures ratées par le haut
+        path += [(f"09:{m:02d}", 110.5, 112, 110.4, 111) for m in range(start, start + 5)]
+        path += [(f"09:{m:02d}", 110, 111.5, 108.8, 109) for m in range(start + 5, start + 10)]
+    eng = _v3_engine(cfg)
+    eng.run_day(_v3_day(cfg, path))
+    assert sum(r["type"] == "confirmation" for r in eng.journal) == 1
