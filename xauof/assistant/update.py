@@ -11,7 +11,7 @@ import argparse
 
 import pandas as pd
 
-from xauof.config import ROOT, load_config, secret
+from xauof.config import load_config, secret
 from xauof.data.gc import normalize_trades
 from xauof.assistant import levels as lv
 from xauof.assistant.snapshot import ny_time
@@ -82,7 +82,7 @@ def main() -> None:
         mt5.shutdown()
     _, msg = ensure_fresh(cfg, pd.Timestamp.now(tz="UTC"))
     print(f"Calendrier : {msg}")
-    print(f"Tableau de bord : streamlit run {ROOT / 'xauof' / 'assistant' / 'app.py'}")
+    print("Interface : python -m xauof.web")
 
 
 if __name__ == "__main__":

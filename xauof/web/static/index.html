@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XAUUSD OF</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2304060c' stroke='%23ffcf33' stroke-width='3'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <header>
+    <div class="brand">
+      <div class="logo-ring"><span>Au</span></div>
+      <div>
+        <div class="logo">XAUUSD<span class="accent">·OF</span></div>
+        <div class="sub">assistant de trading · lecture seule</div>
+      </div>
+    </div>
+    <nav>
+      <button class="tab active" data-tab="live">LIVE</button>
+      <button class="tab" data-tab="journal">JOURNAL</button>
+    </nav>
+    <div class="clocks">
+      <div><label>NEW YORK</label><b id="clock-ny">--:--</b></div>
+      <div><label>PARIS</label><b id="clock-paris">--:--</b></div>
+      <div class="source"><span class="dot" id="live-dot"></span><span id="source">—</span></div>
+    </div>
+  </header>
+
+  <section id="banner" class="banner hidden"></section>
+
+  <main id="tab-live">
+    <section class="kpis">
+      <div class="kpi"><label>PRIX <i class="help" title="Bid = prix de vente, Ask = prix d'achat chez ton broker">?</i></label>
+        <div class="big mono" id="bid">—</div><div class="small mono" id="ask">ask —</div></div>
+      <div class="kpi"><label>SPREAD</label><div class="big mono" id="spread">—</div><div class="small" id="spread-state">—</div></div>
+      <div class="kpi"><label>CONTEXTE <i class="help" title="Position du prix par rapport à la zone de valeur (70 % du volume) de la séance d'hier">?</i></label>
+        <div class="big" id="context">—</div><div class="small" id="nearest">—</div></div>
+      <div class="kpi"><label>PRESSION 5 MIN <i class="help" title="ESTIMATION à partir des ticks du broker (pas le vrai volume du CME) : hausses de prix − baisses de prix">?</i></label>
+        <div class="big mono" id="delta5">—</div><div class="small mono" id="cvd">CVD —</div></div>
+      <div class="kpi"><label>PROCHAINE NEWS</label><div class="big mono" id="news-count">—</div><div class="small" id="news-name">—</div></div>
+      <div class="kpi wide"><label>RISQUE DU JOUR <i class="help" title="Perte du jour (réalisée + flottante) face à ton arrêt interne et à la limite FTMO">?</i></label>
+        <div class="gauge"><div class="gauge-fill" id="risk-fill"></div><div class="gauge-mark" id="risk-mark"></div></div>
+        <div class="small mono" id="risk-text">—</div></div>
+    </section>
+
+    <section class="grid">
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <h2>XAUUSD <span class="muted" id="window">—</span></h2>
+          <div class="tf"><button class="tf-btn active" data-tf="1">M1</button><button class="tf-btn" data-tf="5">M5</button></div>
+        </div>
+        <div class="chart-wrap"><div id="chart"></div><canvas id="overlay"></canvas></div>
+        <div class="legend">
+          <span><i class="sw gold"></i>Profil volume d'hier</span>
+          <span><i class="sw cyan"></i>Profil temps (TPO)</span>
+          <span><i class="sw band"></i>HVN</span>
+          <span><i class="sw line"></i>LVN</span>
+          <span><i class="sw ib"></i>IB du jour</span>
+          <span><i class="sw bull"></i>Zone achat</span>
+          <span><i class="sw bear"></i>Zone vente</span>
+        </div>
+        <div class="panel-head of-head"><h3>ORDER FLOW <span class="tag">estimation ticks</span></h3>
+          <span class="muted small">barres = pression par minute · ligne = cumul depuis 08:20</span></div>
+        <div id="ofchart"></div>
+      </div>
+
+      <aside>
+        <div class="panel">
+          <h2>SETUPS <span class="accent">A+</span> <i class="help" title="Tes critères : zone FVG/OB sur un niveau d'hier ET dans le sens du contexte. Non validés statistiquement.">?</i></h2>
+          <div id="setups" class="cards"><div class="empty">aucun setup pour l'instant</div></div>
+        </div>
+        <div class="panel">
+          <h2>ALERTES</h2>
+          <div id="alerts" class="feed"><div class="empty">—</div></div>
+        </div>
+        <div class="panel">
+          <h2>NIVEAUX D'HIER <span class="muted small" id="levels-src"></span></h2>
+          <div id="levels" class="levels"></div>
+        </div>
+        <div class="panel two">
+          <div><h3>IB DU JOUR <i class="help" title="Initial Balance : plus haut / plus bas de 08:20 à 09:20 (New York)">?</i></h3><div id="ib" class="mono">—</div></div>
+          <div><h3>ZONES ACTIVES</h3><div id="zones" class="mono small">—</div></div>
+        </div>
+        <div class="panel"><h3>ANNONCES USD</h3><div id="news" class="feed small"></div></div>
+      </aside>
+    </section>
+  </main>
+
+  <main id="tab-journal" class="hidden">
+    <section class="panel">
+      <div class="panel-head"><h2>JOURNAL DE TRADING</h2>
+        <button id="sync" class="btn">⟳ Importer depuis MT5</button></div>
+      <p class="muted small">Coche les critères de chaque trade : au fil des semaines, les statistiques diront quels setups gagnent vraiment chez toi (en R, à partir du stop initial).</p>
+      <div id="jstats" class="kpis"></div>
+      <div id="jgroups" class="jgroups"></div>
+      <div class="table-wrap"><table id="jtable"></table></div>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip hidden"></div>
+  <footer>Outil d'aide à la décision, aucun ordre n'est passé. Aucune stratégie testée n'a montré d'edge statistique : la décision reste la tienne.</footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

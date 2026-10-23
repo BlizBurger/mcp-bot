@@ -72,7 +72,7 @@ def snapshot(cfg: dict, xau_m1: pd.DataFrame, levels: Optional[dict], calendar: 
     last = closed.iloc[-1]
     out["prix"] = {"bid": float(last["close"]), "ask": float(last["close"] + last["spread"] * point),
                    "spread_pts": float(last["spread"]), "bougie": closed.index[-1]}
-    out["spread_bloque"] = spread_blocked(closed["spread"], now, float(last["spread"]),
+    out["spread_bloque"] = spread_blocked(closed["spread"], now.floor("min"), float(last["spread"]),
                                           r["spread_filter_window_min"], r["spread_filter_min_obs"],
                                           r["spread_filter_mult"])
 

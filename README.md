@@ -80,19 +80,26 @@ sans décalage (sinon erreur de fuseau ou de changement d'heure).
 python -m xauof.bridge.check --start 2025-10-01 --end 2026-10-01
 ```
 
-## Assistant de trading manuel
+## Interface « XAUUSD·OF » (assistant de trading manuel)
 
 Aide à la décision pour ton trading discrétionnaire. **Lecture seule : aucun ordre n'est passé.**
 
 ```bash
-python -m xauof.assistant.update        # chaque matin (MT5 ouvert) : niveaux GC de la veille → XAUUSD
-streamlit run xauof/assistant/app.py    # tableau de bord en direct (rafraîchi toutes les 30 s)
+python -m xauof.assistant.update   # chaque matin (MT5 ouvert) : niveaux GC de la veille vers XAUUSD
+python -m xauof.web                # interface en direct (MT5 ouvert) : http://127.0.0.1:8000
+python -m xauof.web --demo         # démo sur données synthétiques (marché fermé)
 ```
 
-Affiche : prix et spread, niveaux de la veille (POC / VAH / VAL volume et TPO, HVN,
-LVN, single prints) reportés sur XAUUSD, IB du jour, zones FVG / OB actives (mêmes
-règles que le moteur), prochaines annonces et fenêtres news, état du compte FTMO
-(perte du jour, marge avant l'arrêt interne et le plancher).
+- **Live** : prix et spread, contexte (position par rapport à la Value Area d'hier),
+  pression order flow (**estimation** à partir des ticks du broker), compte à rebours
+  news, jauge de risque du jour ; graphique M1 / M5 avec niveaux d'hier, HVN, single
+  prints, IB et zones FVG / OB ; order flow (delta par minute + CVD depuis 08:20) ;
+  setups **A+** (zone FVG / OB sur un niveau d'hier ET dans le sens du contexte) et
+  alertes (Telegram si `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` sont dans `.env`).
+- **Journal** : import des positions clôturées MT5, critères à cocher, notes ;
+  statistiques en R par setup et par critère.
+- Écoute uniquement sur `127.0.0.1` (ton PC). La mise en ligne demandera HTTPS +
+  authentification.
 
 ## Calendrier économique
 

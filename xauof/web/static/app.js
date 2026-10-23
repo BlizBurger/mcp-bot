@@ -1,0 +1,210 @@
+/* XAUUSD OF — interface (lecture seule). */
+const C = { cyan: "#00e5ff", magenta: "#ff2bd6", gold: "#ffcf33", green: "#00ffa3", red: "#ff3b6b", grey: "#8b9bb4" };
+const $ = (id) => document.getElementById(id);
+const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? "—" : Number(x).toFixed(d));
+const sign = (x, d = 0) => (x > 0 ? "+" : "") + fmt(x, d);
+
+let state = null, tf = 1, bars = [], priceLines = [];
+
+/* ---------------------------------------------------------------- graphiques */
+const LW = LightweightCharts;
+const base = {
+  layout: { background: { type: "solid", color: "transparent" }, textColor: "#8fa3c0", fontFamily: "JetBrains Mono" },
+  grid: { vertLines: { color: "rgba(0,229,255,0.05)" }, horzLines: { color: "rgba(0,229,255,0.05)" } },
+  rightPriceScale: { borderColor: "rgba(0,229,255,0.15)" },
+  timeScale: { borderColor: "rgba(0,229,255,0.15)", timeVisible: true, secondsVisible: false },
+  crosshair: { mode: LW.CrosshairMode.Normal },
+};
+const chart = LW.createChart($("chart"), { ...base, autoSize: true });
+chart.timeScale().applyOptions({ rightOffset: 6 });
+const candles = chart.addCandlestickSeries({
+  upColor: C.green, downColor: C.red, borderUpColor: C.green, borderDownColor: C.red,
+  wickUpColor: C.green, wickDownColor: C.red,
+});
+const of = LW.createChart($("ofchart"), { ...base, autoSize: true, rightPriceScale: { visible: true, borderColor: "rgba(0,229,255,0.15)" },
+  leftPriceScale: { visible: false } });
+const deltaS = of.addHistogramSeries({ priceScaleId: "left", priceLineVisible: false });
+const cvdS = of.addLineSeries({ color: C.magenta, lineWidth: 2, priceLineVisible: false });
+let syncing = false, framed = false;
+const sync = (a, b) => a.timeScale().subscribeVisibleTimeRangeChange((r) => {
+  if (syncing || !r) return; syncing = true;
+  try { b.timeScale().setVisibleRange(r); } catch (e) { /* données pas encore chargées */ }
+  syncing = false; drawOverlay();
+});
+sync(chart, of); sync(of, chart);
+
+/* ---------------------------------------------------------------- calque zones / bandes */
+const canvas = $("overlay");
+function nearestTime(t) {
+  if (!bars.length) return null;
+  let best = bars[0].time;
+  for (const b of bars) { if (b.time <= t) best = b.time; else break; }
+  return best;
+}
+function drawOverlay() {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.clientWidth, h = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr); ctx.clearRect(0, 0, w, h);
+  if (!state || !bars.length) return;
+  const y = (p) => candles.priceToCoordinate(p);
+  const plotW = w - 70;
+  const band = (lo, hi, fill, stroke) => {
+    const y1 = y(hi), y2 = y(lo); if (y1 === null || y2 === null) return;
+    ctx.fillStyle = fill; ctx.fillRect(0, y1, plotW, Math.max(1, y2 - y1));
+    if (stroke) { ctx.strokeStyle = stroke; ctx.setLineDash([4, 4]); ctx.strokeRect(0, y1, plotW, Math.max(1, y2 - y1)); ctx.setLineDash([]); }
+  };
+  for (const l of state.niveaux || []) {
+    if (l.type === "HVN") band(l.bas, l.haut, "rgba(255,207,51,0.07)");
+    if (l.type === "SP") band(l.bas, l.haut, "rgba(0,229,255,0.07)");
+  }
+  if (state.ib) band(state.ib.low, state.ib.high, "rgba(0,229,255,0.04)", "rgba(0,229,255,0.35)");
+  const ts = chart.timeScale();
+  for (const z of state.zones || []) {
+    const x0 = ts.timeToCoordinate(nearestTime(z.depuis)); const y1 = y(z.haut), y2 = y(z.bas);
+    if (x0 === null || y1 === null || y2 === null) continue;
+    const bull = z.sens > 0;
+    const grad = ctx.createLinearGradient(x0, 0, plotW, 0);
+    grad.addColorStop(0, bull ? "rgba(0,255,163,0.35)" : "rgba(255,59,107,0.35)");
+    grad.addColorStop(1, bull ? "rgba(0,255,163,0.06)" : "rgba(255,59,107,0.06)");
+    ctx.fillStyle = grad; ctx.fillRect(x0, y1, plotW - x0, Math.max(2, y2 - y1));
+    ctx.fillStyle = bull ? C.green : C.red; ctx.font = "10px JetBrains Mono";
+    ctx.fillText(`${z.type} ${bull ? "▲" : "▼"}`, x0 + 4, y1 - 3);
+  }
+}
+new ResizeObserver(drawOverlay).observe($("chart"));
+
+function setLevelLines() {
+  priceLines.forEach((l) => candles.removePriceLine(l)); priceLines = [];
+  for (const l of state.niveaux || []) {
+    let opt = null;
+    if (l.nom === "POC vol") opt = { color: C.gold, lineWidth: 2, lineStyle: LW.LineStyle.Solid };
+    else if (l.nom === "VAH vol" || l.nom === "VAL vol") opt = { color: C.gold, lineWidth: 1, lineStyle: LW.LineStyle.Dashed };
+    else if (l.type === "POC" || l.type === "VAH" || l.type === "VAL") opt = { color: C.cyan, lineWidth: 1, lineStyle: LW.LineStyle.Dotted };
+    else if (l.type === "LVN") opt = { color: C.grey, lineWidth: 1, lineStyle: LW.LineStyle.SparseDotted };
+    if (opt) priceLines.push(candles.createPriceLine({ price: l.prix, axisLabelVisible: true, title: l.nom, ...opt }));
+  }
+}
+
+/* ---------------------------------------------------------------- rendu de l'état */
+function render(s) {
+  state = s;
+  $("source").textContent = s.source; $("live-dot").className = "dot on";
+  $("clock-ny").textContent = s.heure_ny || "--:--"; $("clock-paris").textContent = s.heure_paris || "--:--";
+  if (s.erreur) { banner(s.erreur, "warn"); return; }
+  const p = s.prix;
+  $("bid").textContent = fmt(p.bid); $("ask").textContent = `ask ${fmt(p.ask)}`;
+  $("spread").textContent = `${fmt(p.spread_pts, 0)} pts`;
+  $("spread-state").innerHTML = s.spread_bloque ? `<span class="down">${s.spread_bloque}</span>` : `<span class="up">normal</span>`;
+  $("context").textContent = s.position_va || "—";
+  $("context").className = "big " + (s.position_va === "au-dessus de la VA" ? "up" : s.position_va === "sous la VA" ? "down" : "");
+  $("nearest").textContent = s.niveau_proche ? `${s.niveau_proche[0]} ${fmt(s.niveau_proche[1])} (${sign(p.bid - s.niveau_proche[1], 2)} $)` : "niveaux d'hier absents";
+  const d5 = s.orderflow.delta_5min;
+  $("delta5").textContent = sign(d5); $("delta5").className = "big mono " + (d5 > 0 ? "up" : d5 < 0 ? "down" : "");
+  $("cvd").textContent = `CVD séance ${s.orderflow.cvd === null ? "—" : sign(s.orderflow.cvd)} · ${s.orderflow.ticks_5min} ticks`;
+  const n = (s.news || [])[0];
+  $("news-count").textContent = n ? (n.dans_min >= 60 ? `${Math.floor(n.dans_min / 60)} h ${n.dans_min % 60}` : `${n.dans_min} min`) : "—";
+  $("news-name").textContent = n ? `${n.annonce} · ${n.heure}` : "aucune annonce connue";
+  $("window").textContent = "· " + s.fenetre;
+  const a = s.compte;
+  if (a) {
+    const lim = s.limites.arret_interne, loss = Math.max(0, a.perte_jour);
+    $("risk-fill").style.width = `${Math.min(100, (loss / s.limites.ftmo_jour) * 100)}%`;
+    $("risk-mark").style.left = `${(lim / s.limites.ftmo_jour) * 100}%`;
+    $("risk-text").innerHTML = `perte jour ${fmt(a.perte_jour)} $ · reste <b>${fmt(a.reste_arret_interne)} $</b> avant ton arrêt (${lim} $) · plancher FTMO à ${fmt(a.marge_plancher_ftmo)} $`;
+  }
+  const msgs = [];
+  if (s.news_cloture) msgs.push(`⚠ Clôture avant annonce majeure : ${s.news_cloture}`);
+  else if (s.news_blackout) msgs.push(`⚠ Fenêtre news : ${s.news_blackout}`);
+  if (a && a.stop_interne_atteint) msgs.push("⛔ Limite interne atteinte : on arrête pour aujourd'hui");
+  for (const m of s.alertes_systeme || []) if (!m.startsWith("Spread")) msgs.push(m);
+  msgs.length ? banner(msgs.join(" · "), a && a.stop_interne_atteint ? "" : "warn") : $("banner").classList.add("hidden");
+
+  $("setups").innerHTML = (s.setups || []).length ? s.setups.map((x) => `
+    <div class="card ${x.zone.sens > 0 ? "buy" : "sell"} ${x.etat === "prix dans la zone" ? "hot" : ""}">
+      <div class="t">${x.zone.sens > 0 ? "▲ ACHAT" : "▼ VENTE"} · ${x.zone.type} ${fmt(x.zone.bas)}–${fmt(x.zone.haut)}</div>
+      <div class="d">${x.etat} · ${x.contexte}</div>
+      <div>${x.niveaux.map((l) => `<span class="chip">${l}</span>`).join("")}</div>
+    </div>`).join("") : `<div class="empty">aucun setup A+ pour l'instant</div>`;
+  $("alerts").innerHTML = (s.alertes || []).length ? s.alertes.map((x) =>
+    `<div class="it ${x.niveau}"><time>${new Date(x.t).toLocaleTimeString("fr-FR", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })}</time>${x.texte}</div>`).join("")
+    : `<div class="empty">aucune alerte</div>`;
+  $("levels-src").textContent = s.niveaux_source ? `séance du ${s.niveaux_source}` : "";
+  const rows = (s.niveaux || []).map((l) => ({ ...l, cls: l.type === "TPO" ? "TPO" : l.type }));
+  rows.push({ nom: "▶ prix actuel", prix: p.bid, cls: "price", distance: 0 });
+  rows.sort((x, y) => y.prix - x.prix);
+  $("levels").innerHTML = rows.length > 1 ? rows.map((l) => `
+    <div class="lv ${l.nom.includes("TPO") ? "TPO" : l.cls}" data-help="${l.aide || ""}">
+      <span>${l.nom}</span><span class="p">${fmt(l.prix)}</span><span class="dist">${l.cls === "price" ? "" : sign(-l.distance, 2)}</span></div>`).join("")
+    : `<div class="empty">lance « python -m xauof.assistant.update » le matin</div>`;
+  $("ib").innerHTML = s.ib ? `${fmt(s.ib.low)} – ${fmt(s.ib.high)}<div class="small muted">${s.ib.definitive ? "définitive" : "en formation"} · ${fmt(s.ib.high - s.ib.low)} $</div>` : "après 08:20";
+  $("zones").innerHTML = (s.zones || []).length ? s.zones.map((z) => `<div class="${z.sens > 0 ? "up" : "down"}">${z.sens > 0 ? "▲" : "▼"} ${z.type} ${fmt(z.bas)}–${fmt(z.haut)}</div>`).join("") : "aucune";
+  $("news").innerHTML = (s.news || []).map((x) => `<div class="it"><time>${x.heure}</time>${x.annonce}</div>`).join("") || `<div class="empty">—</div>`;
+  setLevelLines(); drawOverlay();
+}
+function banner(text, cls) { const b = $("banner"); b.textContent = text; b.className = "banner " + (cls || ""); }
+
+/* ---------------------------------------------------------------- boucles */
+async function getJSON(url, opt) { const r = await fetch(url, opt); if (!r.ok) throw new Error(r.status); return r.json(); }
+async function loadState() { try { render(await getJSON("/api/state")); } catch (e) { $("live-dot").className = "dot off"; banner("Serveur injoignable", ""); } }
+async function loadBars() {
+  try {
+    bars = await getJSON(`/api/bars?tf=${tf}`); candles.setData(bars);
+    if (!framed && bars.length) {                       // cadrage initial : les dernières bougies
+      const n = bars.length, show = tf === 1 ? 150 : 72;
+      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - show), to: n + 4 }); framed = true;
+    }
+    const ofd = await getJSON("/api/orderflow");
+    deltaS.setData(ofd.map((x) => ({ time: x.time, value: x.delta, color: x.delta >= 0 ? "rgba(0,255,163,0.6)" : "rgba(255,59,107,0.6)" })));
+    cvdS.setData(ofd.filter((x) => x.cvd !== null).map((x) => ({ time: x.time, value: x.cvd })));
+    drawOverlay();
+  } catch (e) { /* le prochain tour réessaie */ }
+}
+document.querySelectorAll(".tf-btn").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tf-btn").forEach((x) => x.classList.remove("active")); b.classList.add("active");
+  tf = +b.dataset.tf; framed = false; loadBars();
+});
+
+/* ---------------------------------------------------------------- infobulles */
+const tip = $("tooltip");
+document.addEventListener("mousemove", (e) => {
+  const el = e.target.closest("[data-help]");
+  if (el && el.dataset.help) { tip.textContent = el.dataset.help; tip.style.left = e.clientX + 14 + "px"; tip.style.top = e.clientY + 14 + "px"; tip.classList.remove("hidden"); }
+  else tip.classList.add("hidden");
+});
+
+/* ---------------------------------------------------------------- journal */
+let criteria = [];
+async function loadJournal() {
+  const j = await getJSON("/api/journal"); criteria = j.criteres;
+  const g = j.stats.global;
+  const card = (label, val, cls = "") => `<div class="kpi"><label>${label}</label><div class="big mono ${cls}">${val}</div></div>`;
+  $("jstats").innerHTML = card("TRADES", g.n) + card("GAGNANTS", g.n ? `${Math.round(g.gagnants * 100)} %` : "—")
+    + card("PNL", `${sign(g.pnl, 2)} $`, g.pnl >= 0 ? "up" : "down") + card("R MOYEN", g.r_moyen === null ? "—" : sign(g.r_moyen, 2), (g.r_moyen || 0) >= 0 ? "up" : "down")
+    + card("A+ (R MOYEN)", j.stats.a_plus ? (j.stats.a_plus.avec.r_moyen ?? "—") : "—") + `<div class="kpi wide"><label>AVERTISSEMENT</label><div class="small">${j.stats.avertissement || "échantillon suffisant pour comparer"}</div></div>`;
+  $("jgroups").innerHTML = Object.entries(j.stats.par_critere || {}).map(([c, v]) =>
+    `<div class="panel small"><b>${c}</b><div class="muted">avec : ${v.avec.n} trades · R ${v.avec.r_moyen ?? "—"} · ${sign(v.avec.pnl, 2)} $</div><div class="muted">sans : ${v.sans.n} trades · R ${v.sans.r_moyen ?? "—"}</div></div>`).join("");
+  $("jtable").innerHTML = `<tr><th>OUVERTURE</th><th>SENS</th><th>LOTS</th><th>ENTRÉE → SORTIE</th><th>PNL</th><th>R</th><th>SETUP</th><th>CRITÈRES</th><th>NOTE</th></tr>` +
+    j.trades.slice().reverse().map((t) => `<tr data-id="${t.id}">
+      <td class="mono">${new Date(t.ouverture).toLocaleString("fr-FR", { timeZone: "America/New_York" })}</td>
+      <td class="${t.sens === "achat" ? "up" : "down"}">${t.sens}</td><td class="mono">${t.lots}</td>
+      <td class="mono">${fmt(t.prix_entree)} → ${fmt(t.prix_sortie)}${t.sl_initial ? `<div class="muted">SL ${fmt(t.sl_initial)}</div>` : ""}</td>
+      <td class="mono ${t.pnl >= 0 ? "up" : "down"}">${sign(t.pnl, 2)}</td><td class="mono">${t.r ?? "—"}</td>
+      <td><input type="text" class="j-setup" value="${t.setup || ""}" placeholder="ex. FVG sur VAL"></td>
+      <td>${criteria.map((c) => `<label><input type="checkbox" class="j-crit" value="${c}" ${(t.criteres || []).includes(c) ? "checked" : ""}> ${c}</label>`).join("")}</td>
+      <td><input type="text" class="j-note" value="${t.note || ""}"></td></tr>`).join("");
+  document.querySelectorAll("#jtable tr[data-id]").forEach((tr) => tr.querySelectorAll("input").forEach((inp) => inp.onchange = async () => {
+    const body = { setup: tr.querySelector(".j-setup").value, note: tr.querySelector(".j-note").value,
+      criteres: [...tr.querySelectorAll(".j-crit:checked")].map((x) => x.value) };
+    await getJSON(`/api/journal/${tr.dataset.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    loadJournal();
+  }));
+}
+$("sync").onclick = async () => { $("sync").textContent = "…"; try { await getJSON("/api/journal/sync", { method: "POST" }); } finally { $("sync").textContent = "⟳ Importer depuis MT5"; loadJournal(); } };
+document.querySelectorAll(".tab").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active")); b.classList.add("active");
+  $("tab-live").classList.toggle("hidden", b.dataset.tab !== "live"); $("tab-journal").classList.toggle("hidden", b.dataset.tab !== "journal");
+  if (b.dataset.tab === "journal") loadJournal(); else drawOverlay();
+});
+
+loadState(); loadBars();
+setInterval(loadState, 3000); setInterval(loadBars, 5000);

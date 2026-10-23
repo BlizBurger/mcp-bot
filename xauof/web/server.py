@@ -1,0 +1,230 @@
+"""Serveur de l'interface (FastAPI) : API JSON + page web. Lecture seule, aucun ordre.
+
+Écoute par défaut sur 127.0.0.1 (ton PC uniquement). La mise en ligne sur un serveur
+demandera HTTPS + authentification (phase 6).
+"""
+from __future__ import annotations
+
+import asyncio
+import threading
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from xauof.assistant.snapshot import ny_time, snapshot
+from xauof.indicators.smc import atr as smc_atr
+from xauof.news.calendar import Calendar, load_calendar
+from xauof.web import journal as jr
+from xauof.web.orderflow_proxy import proxy_bars
+from xauof.web.setups import AlertCenter, qualify
+
+STATIC = Path(__file__).parent / "static"
+NY = "America/New_York"
+
+EXPLAIN = {
+    "POC vol": "Prix le plus échangé hier (GC) : aimant, le marché y revient souvent.",
+    "VAH vol": "Haut de la zone de valeur d'hier (70 % du volume) : résistance ou tremplin.",
+    "VAL vol": "Bas de la zone de valeur d'hier : support ou tremplin.",
+    "POC TPO": "Prix où le marché a passé le plus de TEMPS hier.",
+    "VAH TPO": "Haut de la zone de valeur en temps.",
+    "VAL TPO": "Bas de la zone de valeur en temps.",
+    "LVN": "Peu de volume hier : prix rejeté, le marché le traverse vite ou y rebondit.",
+    "HVN": "Beaucoup de volume hier : prix accepté, le marché y ralentit.",
+    "single prints": "Zone traversée en une seule période de 30 min : trou à combler ou rejet net.",
+}
+
+
+def chart_time(ts: pd.Timestamp) -> int:
+    """Secondes « heure de New York » pour l'axe du graphique (lightweight-charts affiche en UTC)."""
+    return int(pd.Timestamp(ts).tz_convert(NY).tz_localize(None).value // 10**9)
+
+
+def demo_calendar(now: pd.Timestamp) -> Calendar:
+    t = now.floor("h") + pd.Timedelta(hours=1)
+    ev = pd.DataFrame({"currency": ["USD"], "impact": ["High"], "kind": ["OTHER"], "event": ["Démo : annonce fictive"]},
+                      index=pd.DatetimeIndex([t], name="time_utc"))
+    return Calendar(ev, [(now - pd.Timedelta(days=2), now + pd.Timedelta(days=2))])
+
+
+class Hub:
+    """État partagé : source, alertes, cache court du dernier état."""
+
+    def __init__(self, cfg: dict, source):
+        self.cfg, self.src = cfg, source
+        self.alerts = AlertCenter()
+        self.lock = threading.Lock()
+        self._cache = (0.0, None)
+        self._cal = (0.0, None)
+
+    def calendar(self, now) -> Calendar:
+        if self.src.name.startswith("DÉMO"):
+            return demo_calendar(now)
+        if time.time() - self._cal[0] > 60:
+            self._cal = (time.time(), load_calendar(self.cfg))
+        return self._cal[1]
+
+    def day_bars(self, now):
+        cfg = self.cfg
+        day = now.tz_convert(NY).normalize().tz_localize(None)
+        start = ny_time(day, cfg["strategy"]["warmup_start"], NY)
+        return day, start, self.src.bars_m1(start, now + pd.Timedelta(minutes=1))
+
+    def state(self) -> dict:
+        with self.lock:
+            if time.time() - self._cache[0] < 2 and self._cache[1] is not None:
+                return self._cache[1]
+            st = self._compute()
+            self._cache = (time.time(), st)
+            return st
+
+    def _compute(self) -> dict:
+        cfg, src = self.cfg, self.src
+        now = src.now()
+        day, start, xau = self.day_bars(now)
+        levels = src.levels(day)
+        try:
+            account = src.account(now)
+        except Exception:
+            account = None
+        snap = snapshot(cfg, xau, levels, self.calendar(now), now, account)
+        if "erreur" in snap:
+            return {"source": src.name, "maintenant": now.isoformat(), "erreur": snap["erreur"]}
+        m5 = xau[["open", "high", "low", "close"]].resample("5min").agg(
+            {"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+        m5 = m5[m5.index + pd.Timedelta(minutes=5) <= now]
+        atr = float(smc_atr(m5, cfg["strategy"]["atr_period"]).iloc[-1]) if len(m5) >= cfg["strategy"]["atr_period"] else np.nan
+        bid = snap["prix"]["bid"]
+        setups = qualify(snap["zones"], levels, bid, atr, cfg["strategy"]["near_atr"])
+        self.alerts.from_setups(setups, now, snap["news_blackout"])
+
+        t_start = ny_time(day, cfg["strategy"]["entry_start"], NY)
+        of_from = t_start if now > t_start else now - pd.Timedelta(hours=1)   # CVD depuis l'ouverture de séance
+        of = proxy_bars(src.ticks(of_from, now), cvd_from=t_start)
+        last5 = of[of.index >= now - pd.Timedelta(minutes=5)]
+        of_sum = {"delta_5min": float(last5["delta"].sum()) if len(last5) else 0.0,
+                  "cvd": float(of["cvd"].dropna().iloc[-1]) if of["cvd"].notna().any() else None,
+                  "ticks_5min": int(last5["ticks"].sum()) if len(last5) else 0}
+
+        lvls = []
+        if levels:
+            for name, val in [("POC vol", levels["poc_v"]), ("VAH vol", levels["vah_v"]), ("VAL vol", levels["val_v"]),
+                              ("POC TPO", levels["poc_t"]), ("VAH TPO", levels["vah_t"]), ("VAL TPO", levels["val_t"])]:
+                lvls.append({"nom": name, "prix": val, "type": name.split()[0], "aide": EXPLAIN[name]})
+            lvls += [{"nom": "LVN", "prix": v, "type": "LVN", "aide": EXPLAIN["LVN"]} for v in levels["lvn"]]
+            lvls += [{"nom": f"HVN {a:.2f}–{b:.2f}", "prix": (a + b) / 2, "bas": a, "haut": b, "type": "HVN",
+                      "aide": EXPLAIN["HVN"]} for a, b in levels["hvn"]]
+            lvls += [{"nom": f"Single prints {a:.2f}–{b:.2f}", "prix": (a + b) / 2, "bas": a, "haut": b,
+                      "type": "SP", "aide": EXPLAIN["single prints"]} for a, b in levels["singles"]]
+            for x in lvls:
+                x["distance"] = round(bid - x["prix"], 2)
+            lvls.sort(key=lambda x: -x["prix"])
+
+        def zone_json(z):
+            return {"id": z.id, "type": z.kind, "sens": z.direction, "bas": z.low, "haut": z.high,
+                    "depuis": chart_time(z.active_from), "etat": z.state}
+
+        news = snap["prochaines_news"]
+        upcoming = [{"heure": t.tz_convert(NY).strftime("%a %d %H:%M"), "dans_min": int((t - now).total_seconds() // 60),
+                     "annonce": e} for t, e in zip(news.index, news["event"])]
+        ib = snap["ib"]
+        return {
+            "source": src.name, "maintenant": now.isoformat(), "heure_ny": snap["heure_ny"],
+            "heure_paris": now.tz_convert("Europe/Paris").strftime("%H:%M"),
+            "fenetre": snap["fenetre"], "prix": {k: (v.isoformat() if hasattr(v, "isoformat") else v)
+                                                 for k, v in snap["prix"].items()},
+            "spread_bloque": snap["spread_bloque"], "position_va": snap.get("position_va"),
+            "niveau_proche": snap.get("niveau_proche"), "niveaux": lvls,
+            "niveaux_source": levels.get("source_day") if levels else None,
+            "ib": ib, "zones": [zone_json(z) for z in snap["zones_actives"]],
+            "setups": [{"zone": zone_json(s["zone"]), "niveaux": s["niveaux"], "contexte": s["contexte"],
+                        "etat": s["etat"]} for s in setups],
+            "orderflow": of_sum, "news": upcoming, "news_blackout": snap["news_blackout"],
+            "news_cloture": snap["news_cloture"], "compte": snap["compte"],
+            "limites": {"arret_interne": cfg["risk"]["daily_stop_usd"], "ftmo_jour": cfg["ftmo"]["daily_loss_limit_usd"]},
+            "alertes_systeme": snap["alertes"], "alertes": self.alerts.feed[:20], "atr_m5": atr,
+        }
+
+
+def create_app(cfg: dict, source, alert_loop: bool = True) -> FastAPI:
+    hub = Hub(cfg, source)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        task = None
+        if alert_loop:
+            async def loop():
+                while True:
+                    try:
+                        await asyncio.to_thread(hub.state)        # alertes même sans page ouverte
+                    except Exception:
+                        pass
+                    await asyncio.sleep(20)
+            task = asyncio.create_task(loop())
+        yield
+        if task:
+            task.cancel()
+
+    app = FastAPI(title="XAUUSD OF", lifespan=lifespan)
+    app.state.hub = hub
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+    @app.get("/")
+    def index():
+        return FileResponse(STATIC / "index.html")
+
+    @app.get("/api/state")
+    def state():
+        return hub.state()
+
+    @app.get("/api/bars")
+    def bars(tf: int = 1):
+        now = source.now()
+        _, _, xau = hub.day_bars(now)
+        if tf == 5:
+            xau = xau[["open", "high", "low", "close"]].resample("5min").agg(
+                {"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+        return [{"time": chart_time(t), "open": r.open, "high": r.high, "low": r.low, "close": r.close}
+                for t, r in xau.iterrows()]
+
+    @app.get("/api/orderflow")
+    def orderflow():
+        now = source.now()
+        day, start, _ = hub.day_bars(now)
+        of = proxy_bars(source.ticks(start, now), cvd_from=ny_time(day, cfg["strategy"]["entry_start"], NY))
+        return [{"time": chart_time(t), "delta": r.delta, "ticks": int(r.ticks),
+                 "cvd": None if pd.isna(r.cvd) else r.cvd} for t, r in of.iterrows()]
+
+    @app.get("/api/journal")
+    def journal():
+        trades = jr.load(cfg)
+        return {"trades": trades, "stats": jr.stats(trades), "criteres": jr.CRITERIA}
+
+    @app.post("/api/journal/sync")
+    def journal_sync():
+        now = source.now()
+        deals, orders = source.journal_raw(now - pd.Timedelta(days=90), now + pd.Timedelta(minutes=1))
+        from xauof.strategy.instrument import load_instrument
+
+        fresh = jr.trades_from_deals(deals, orders, cfg["symbols"]["broker"], load_instrument(cfg).value_per_price,
+                                     source.server_to_utc)
+        trades = jr.merge(jr.load(cfg), fresh)
+        jr.save(cfg, trades)
+        return {"importes": len(fresh), "total": len(trades)}
+
+    @app.post("/api/journal/{trade_id}")
+    def journal_annotate(trade_id: int, body: dict = Body(...)):
+        trades = jr.load(cfg)
+        try:
+            t = jr.annotate(trades, trade_id, body.get("setup"), body.get("criteres"), body.get("note"))
+        except StopIteration:
+            raise HTTPException(404, "trade inconnu")
+        jr.save(cfg, trades)
+        return t
+
+    return app
