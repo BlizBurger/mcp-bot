@@ -94,13 +94,27 @@ python -m xauof.web.alert_stats   # alertes A+ : fréquence, horaires et ce que 
 - **Live** : prix et spread, contexte (position par rapport à la Value Area d'hier),
   pression order flow (**estimation** à partir des ticks du broker), compte à rebours
   news, jauge de risque du jour ; graphique M1 / M5 avec niveaux d'hier, HVN, single
-  prints, IB et zones FVG / OB ; order flow (delta par minute + CVD depuis 08:20) ;
+  prints, IB et zones FVG / OB ; order flow (delta par bougie + CVD depuis 08:20) ;
   setups **A+** (zone FVG / OB sur un niveau d'hier ET dans le sens du contexte) et
   alertes (Telegram si `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` sont dans `.env`).
 - **Journal** : import des positions clôturées MT5, critères à cocher, notes ;
   statistiques en R par setup et par critère.
-- Écoute uniquement sur `127.0.0.1` (ton PC). La mise en ligne demandera HTTPS +
-  authentification.
+- Chaque setup A+ propose un **plan** (entrée limite, SL, TP, lots) selon les règles figées
+  de [ALERTES_PLAN.md](ALERTES_PLAN.md). Ce plan n'est **pas validé** : `alert_stats` mesure
+  ce qu'il aurait donné sur l'historique.
+- Écoute uniquement sur `127.0.0.1` (ton PC).
+
+### Sur le téléphone (Tailscale)
+
+1. Installer Tailscale sur le PC et sur le téléphone (tailscale.com, gratuit), se connecter
+   avec le **même compte** des deux côtés.
+2. Dans `.env` : `XAUOF_WEB_PASSWORD=...` (au moins 10 caractères, mot de passe unique).
+3. Sur le PC, une seule fois : `tailscale serve --bg 8000` (accepter l'activation HTTPS si
+   Tailscale la demande). L'adresse `https://<nom-du-pc>.<...>.ts.net` s'affiche.
+4. Lancer `python -m xauof.web --phone` et ouvrir cette adresse sur le téléphone.
+
+Le serveur reste sur `127.0.0.1` : aucun port n'est ouvert sur la box, seuls tes appareils
+Tailscale y accèdent, et le mot de passe protège en plus pages et API.
 
 ## Calendrier économique
 

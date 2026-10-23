@@ -123,7 +123,7 @@ function render(s) {
     const lim = s.limites.arret_interne, loss = Math.max(0, a.perte_jour);
     $("risk-fill").style.width = `${Math.min(100, (loss / s.limites.ftmo_jour) * 100)}%`;
     $("risk-mark").style.left = `${(lim / s.limites.ftmo_jour) * 100}%`;
-    $("risk-text").innerHTML = `perte jour ${fmt(a.perte_jour)} $ · reste <b>${fmt(a.reste_arret_interne)} $</b> avant ton arrêt (${lim} $) · plancher FTMO à ${fmt(a.marge_plancher_ftmo)} $`;
+    $("risk-text").innerHTML = `résultat du jour <b class="${a.perte_jour <= 0 ? "up" : "down"}">${sign(-a.perte_jour, 2)} $</b> · reste <b>${fmt(a.reste_arret_interne)} $</b> avant ton arrêt (${lim} $) · plancher FTMO à ${fmt(a.marge_plancher_ftmo)} $`;
   }
   const msgs = [];
   if (s.news_cloture) msgs.push(`⚠ Clôture avant annonce majeure : ${s.news_cloture}`);
@@ -174,7 +174,7 @@ async function loadBars() {
       const n = bars.length, show = tf === 1 ? 150 : 72;
       chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - show), to: n + 4 }); framed = true;
     }
-    const ofd = await getJSON("/api/orderflow");
+    const ofd = await getJSON(`/api/orderflow?tf=${tf}`);         // même unité de temps que les bougies
     deltaS.setData(ofd.map((x) => ({ time: x.time, value: x.delta, color: x.delta >= 0 ? "rgba(0,255,163,0.6)" : "rgba(255,59,107,0.6)" })));
     cvdS.setData(ofd.filter((x) => x.cvd !== null).map((x) => ({ time: x.time, value: x.cvd })));
     drawOverlay();

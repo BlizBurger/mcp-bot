@@ -45,6 +45,8 @@ def test_bars_and_orderflow_aligned(client):
     assert m1 and m5 and of and len(m5) < len(m1)
     assert m1[-1]["time"] == of[-1]["time"]
     assert all(b["low"] <= min(b["open"], b["close"]) and b["high"] >= max(b["open"], b["close"]) for b in m1)
+    of5 = client.get("/api/orderflow?tf=5").json()
+    assert {x["time"] for x in of5} <= {b["time"] for b in m5} and len(of5) < len(of)   # même grille que les bougies M5
 
 
 def test_journal_sync_and_annotate(client):
@@ -76,3 +78,33 @@ def test_demo_isolated_from_real_journal_and_telegram(monkeypatch):
     assert jr.journal_path(demo) != jr.journal_path(cfg)
     assert jr.journal_path(demo).parent.parent.name == "demo"
     assert os.environ["XAUOF_NO_TELEGRAM"] == "1"
+
+
+def test_password_protects_pages_and_api(tmp_path):
+    from xauof.web.server import COOKIE
+
+    cfg = copy.deepcopy(load_config())
+    cfg["data"]["dir"] = str(tmp_path / "data")
+    app = create_app(cfg, DemoSource(cfg, speed=0.0), alert_loop=False, password="un-long-secret")
+    with TestClient(app) as c:
+        assert c.get("/api/state").status_code == 401
+        r = c.get("/", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login"
+        assert c.get("/static/app.js", follow_redirects=False).status_code == 303
+        bad = c.post("/login", content="password=faux", headers={"Content-Type": "application/x-www-form-urlencoded"},
+                     follow_redirects=False)
+        assert bad.headers["location"] == "/login?e=1" and COOKIE not in c.cookies
+        ok = c.post("/login", content="password=un-long-secret",
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}, follow_redirects=False)
+        assert ok.status_code == 303 and "httponly" in ok.headers["set-cookie"].lower()
+        assert c.get("/api/state").status_code == 200 and "XAUUSD" in c.get("/").text
+
+
+def test_phone_mode_requires_a_password(monkeypatch):
+    from xauof.web.__main__ import phone_password
+
+    monkeypatch.setenv("XAUOF_WEB_PASSWORD", "court")
+    with pytest.raises(SystemExit):
+        phone_password()
+    monkeypatch.setenv("XAUOF_WEB_PASSWORD", "assez-long-pour-passer")
+    assert phone_password() == "assez-long-pour-passer"

@@ -1,11 +1,14 @@
 """Serveur de l'interface (FastAPI) : API JSON + page web. Lecture seule, aucun ordre.
 
-Écoute par défaut sur 127.0.0.1 (ton PC uniquement). La mise en ligne sur un serveur
-demandera HTTPS + authentification (phase 6).
+Écoute par défaut sur 127.0.0.1 (ton PC uniquement). Avec --phone (accès téléphone via
+Tailscale), un mot de passe protège toutes les pages et l'API. Mise en ligne publique :
+HTTPS en plus (phase 6).
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -13,8 +16,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from urllib.parse import parse_qs
+
+from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from xauof.assistant.snapshot import ny_time, snapshot
@@ -166,7 +171,23 @@ class Hub:
         }
 
 
-def create_app(cfg: dict, source, alert_loop: bool = True) -> FastAPI:
+COOKIE = "xauof_session"
+LOGIN_PAGE = """<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>XAUUSD OF</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#04060c;color:#d8e6ff;
+font-family:system-ui,sans-serif}form{display:flex;flex-direction:column;gap:12px;width:min(320px,90vw)}
+h1{font-size:20px;letter-spacing:3px;color:#ffcf33;margin:0 0 8px}input,button{font-size:16px;padding:12px;
+border-radius:8px;border:1px solid #00e5ff55;background:#0a1020;color:#d8e6ff}button{background:#00e5ff22;
+color:#00e5ff;cursor:pointer}p{color:#ff3b6b;margin:0}</style></head><body><form method="post" action="/login">
+<h1>XAUUSD·OF</h1>%s<input type="password" name="password" placeholder="mot de passe" autofocus
+autocomplete="current-password"><button>Entrer</button></form></body></html>"""
+
+
+def session_token(password: str) -> str:
+    return hmac.new(password.encode(), b"xauof-session-v1", hashlib.sha256).hexdigest()
+
+
+def create_app(cfg: dict, source, alert_loop: bool = True, password: str | None = None) -> FastAPI:
     hub = Hub(cfg, source)
 
     @asynccontextmanager
@@ -187,6 +208,31 @@ def create_app(cfg: dict, source, alert_loop: bool = True) -> FastAPI:
 
     app = FastAPI(title="XAUUSD OF", lifespan=lifespan)
     app.state.hub = hub
+
+    if password:
+        token = session_token(password)
+
+        @app.middleware("http")
+        async def require_login(request: Request, call_next):
+            if request.url.path == "/login" or hmac.compare_digest(request.cookies.get(COOKIE, ""), token):
+                return await call_next(request)
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "connexion requise"}, status_code=401)
+            return RedirectResponse("/login", status_code=303)
+
+        @app.get("/login")
+        def login_page(e: int = 0):
+            return HTMLResponse(LOGIN_PAGE % ("<p>Mot de passe incorrect</p>" if e else ""))
+
+        @app.post("/login")
+        async def login(request: Request):
+            given = parse_qs((await request.body()).decode()).get("password", [""])[0]
+            if not hmac.compare_digest(session_token(given), token):
+                await asyncio.sleep(1.0)                       # freine les essais en série
+                return RedirectResponse("/login?e=1", status_code=303)
+            r = RedirectResponse("/", status_code=303)
+            r.set_cookie(COOKIE, token, max_age=30 * 24 * 3600, httponly=True, samesite="strict")
+            return r
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @app.get("/")
@@ -208,10 +254,11 @@ def create_app(cfg: dict, source, alert_loop: bool = True) -> FastAPI:
                 for t, r in xau.iterrows()]
 
     @app.get("/api/orderflow")
-    def orderflow():
+    def orderflow(tf: int = 1):
         now = source.now()
         day, start, _ = hub.day_bars(now)
-        of = proxy_bars(source.ticks(start, now), cvd_from=ny_time(day, cfg["strategy"]["entry_start"], NY))
+        of = proxy_bars(source.ticks(start, now), freq="5min" if tf == 5 else "1min",
+                        cvd_from=ny_time(day, cfg["strategy"]["entry_start"], NY))
         return [{"time": chart_time(t), "delta": r.delta, "ticks": int(r.ticks),
                  "cvd": None if pd.isna(r.cvd) else r.cvd} for t, r in of.iterrows()]
 
