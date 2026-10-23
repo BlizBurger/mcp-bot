@@ -141,7 +141,7 @@ def summarize(events: list[dict], days: list[pd.Timestamp]) -> str:
         paris = paris_t[slots.dt.strftime("%H:%M") == slot].dt.floor("30min").dt.strftime("%H:%M").mode().iloc[0]
         lines.append(f"  {slot} NY ({paris} Paris)  {cnt:4d}  {'█' * round(40 * cnt / len(contact))}")
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"]
-    by_dow = Counter(ny_t.dt.dayofweek)
+    by_dow = Counter(ny_t.dt.day_of_week)
     lines.append("\nPar jour : " + " · ".join(f"{jours[d]} {by_dow.get(d, 0)}" for d in range(5)))
     lines.append(f"Sens : {(contact['sens'] == 'achat').sum()} achats · {(contact['sens'] == 'vente').sum()} ventes")
     lines.append(f"Pendant une fenêtre news (à éviter) : {int(contact['news'].sum())}")
