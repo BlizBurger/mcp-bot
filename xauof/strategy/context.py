@@ -113,22 +113,31 @@ def measured_move(direction: int, lv: SessionLevels, source: str) -> tuple[float
     return (vah + height, "mouvement mesuré") if direction > 0 else (val - height, "mouvement mesuré")
 
 
-def target(direction: int, entry: float, lv: SessionLevels,
-           extra: Optional[list[tuple[float, str]]] = None) -> Optional[tuple[float, str]]:
-    """Premier niveau opposant connu dans le sens du trade (POC, HVN, borne de VA, plus
-    les objectifs `extra`, ex. mouvement mesuré). HVN = zone : on vise son bord le plus
-    proche. Aucun obstacle n'est sauté : le plus proche dans le sens du trade gagne."""
+def opposing_levels(direction: int, entry: float, lv: SessionLevels,
+                    extra: Optional[list[tuple[float, str]]] = None) -> list[tuple[float, str]]:
+    """Niveaux connus situés devant le prix dans le sens du trade (POC, VAH/VAL des deux
+    profils, bord proche des HVN, plus `extra`), du plus proche au plus lointain."""
     cands = [(lv.poc_v, "POC vol"), (lv.poc_t, "POC TPO"), (lv.vah_v, "VAH vol"), (lv.val_v, "VAL vol"),
              (lv.vah_t, "VAH TPO"), (lv.val_t, "VAL TPO")] + list(extra or [])
     for lo, hi in lv.hvn:
-        near_edge = lo if direction > 0 else hi
         if lo <= entry <= hi:
             continue                                  # déjà dans la HVN
-        cands.append((near_edge, f"HVN {lo:.2f}-{hi:.2f}"))
+        cands.append((lo if direction > 0 else hi, f"HVN {lo:.2f}-{hi:.2f}"))
     ahead = [(lvl, name) for lvl, name in cands if direction * (lvl - entry) > 0]
-    if not ahead:
-        return None
-    return min(ahead, key=lambda c: abs(c[0] - entry))
+    return sorted(ahead, key=lambda c: abs(c[0] - entry))
+
+
+def target(direction: int, entry: float, lv: SessionLevels,
+           extra: Optional[list[tuple[float, str]]] = None) -> Optional[tuple[float, str]]:
+    """V1 : premier niveau opposant connu dans le sens du trade (aucun obstacle sauté)."""
+    ahead = opposing_levels(direction, entry, lv, extra)
+    return ahead[0] if ahead else None
+
+
+def obstacle_before(direction: int, entry: float, limit: float, lv: SessionLevels) -> Optional[tuple[float, str]]:
+    """V2 « espace libre » : premier niveau connu strictement devant l'entrée et au plus à `limit`."""
+    ahead = [c for c in opposing_levels(direction, entry, lv) if direction * (c[0] - limit) <= 0]
+    return ahead[0] if ahead else None
 
 
 def unclassified_share(gc_m1: pd.DataFrame, t: pd.Timestamp, window: str = "60min") -> float:

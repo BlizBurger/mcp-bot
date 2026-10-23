@@ -82,7 +82,9 @@ python -m xauof.bridge.check --start 2025-10-01 --end 2026-10-01
 
 ## Moteur de stratégie (phase 4)
 
-Règles complètes, hypothèses et limites : [STRATEGY.md](STRATEGY.md).
+Règles complètes, hypothèses et limites : [STRATEGY.md](STRATEGY.md) (V1) et
+[STRATEGY_V2.md](STRATEGY_V2.md) (V2 figée : zones + delta GC, partiel à +1 R,
+break-even, objectif 2 R ; variantes V2_DF, V2_D, V2_PF, V2_P).
 Simulation uniquement : aucun ordre réel n'est passé.
 
 ```bash

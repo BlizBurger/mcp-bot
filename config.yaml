@@ -137,6 +137,12 @@ strategy:
   trigger:
     max_m1_bars: 3                # délai de confirmation après le contact
     absorption_enabled: false     # variante séparée, désactivée par défaut
+  v2:                             # STRATEGY_V2.md (figée le 2026-10-23)
+    target_r: 2.0                 # objectif fixe en R (distance entrée → SL)
+    partial_r: 1.0                # sortie partielle à +1 R...
+    partial_fraction: 0.5         # ... de 50 % de la position (arrondi vers le bas)
+    breakeven_after_partial: true # stop du reste ramené au prix d'entrée
+    space_filter_r: 1.0           # variantes *F : refus si un niveau de la veille est avant +1 R
   data_guards:
     max_gc_staleness_min: 2       # dernière bougie GC trop ancienne → pas d'entrée
     max_unclassified_share: 0.05  # part du volume GC sans côté agresseur tolérée (delta)

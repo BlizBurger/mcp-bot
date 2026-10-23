@@ -195,3 +195,48 @@ def test_bootstrap_ci():
     assert lo < 0 < hi
     lo, hi = R.bootstrap_ci([-1.0] * 30 + [0.5] * 10)
     assert hi < 0
+
+
+def test_v2_variants_trade_with_consistent_accounting(market):
+    cfg, data = market
+    eng = run(cfg, data, "V2_P")
+    assert len(eng.trades) >= 3
+    for t in eng.trades:
+        assert t.scenario == "v2"
+        assert t.risk_usd <= 50 + 1e-9
+        if t.partial_done:
+            assert t.lots == pytest.approx(t.lots_initial - t.partial_lots)
+    assert eng.account.balance == pytest.approx(10000 + sum(t.pnl for t in eng.trades))
+
+
+def test_v2_target_is_two_r(market):
+    cfg, data = market
+    eng = run(cfg, data, "V2_P")
+    entries = [r for r in eng.journal if r["type"] == "entree"]
+    assert entries
+    for r in entries:
+        risk = r["direction"] * (r["entree"] - r["sl"])
+        assert r["direction"] * (r["tp"] - r["entree"]) == pytest.approx(2 * risk)
+        if r["partiel_niveau"] is not None:
+            assert r["direction"] * (r["partiel_niveau"] - r["entree"]) == pytest.approx(risk)
+
+
+def test_v2_space_filter_only_refuses(market):
+    cfg, data = market
+    free = run(cfg, data, "V2_P")
+    filt = run(cfg, data, "V2_PF")
+    motifs = [m for r in filt.journal if r["type"] == "entree_refusee" for m in r["motifs"]]
+    assert any(m.startswith("espace libre insuffisant") for m in motifs)
+    assert len(filt.trades) <= len(free.trades) + 3      # le filtre retire des trades (± effets de chaîne)
+
+
+def test_v2_without_filter_does_not_need_previous_levels(market):
+    cfg, data = market
+    eng = Engine(cfg, "V2_P", load_instrument(cfg), Account.from_config(cfg), Calendar.empty(), SimExecutor())
+    eng_f = Engine(cfg, "V2_PF", load_instrument(cfg), Account.from_config(cfg), Calendar.empty(), SimExecutor())
+    for day in [d for d in data["days"] if pd.Timestamp(START) <= d < pd.Timestamp(END)]:
+        dd = R.day_data(cfg, data, day, None, "test : niveaux retirés")
+        eng.run_day(dd)
+        eng_f.run_day(dd)
+    assert eng.trades and not eng_f.trades
+

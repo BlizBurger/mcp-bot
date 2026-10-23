@@ -25,7 +25,7 @@ from xauof.indicators import sessions
 from xauof.indicators.check import day_bounds
 from xauof.news.calendar import Calendar
 from xauof.strategy import context as ctx
-from xauof.strategy.engine import DayData, Engine, SimExecutor
+from xauof.strategy.engine import VARIANTS, DayData, Engine, SimExecutor
 from xauof.strategy.instrument import load_instrument
 from xauof.strategy.risk import Account
 
@@ -109,7 +109,7 @@ def run(cfg: dict, start, end, variant: str, holdout: bool = False, out_dir: Pat
     share = aggressor_check(data["gc"], start, end)
     limit = cfg["strategy"]["data_guards"]["max_unclassified_share"]
     print(f"Contrôle source GC : {share:.2%} du volume sans côté agresseur (limite {limit:.0%})")
-    if variant.startswith("C") and not share <= limit:
+    if VARIANTS[variant]["trigger"] == "delta" and not share <= limit:
         raise SystemExit(f"Variante {variant} désactivée : la source GC ne classe pas assez de transactions "
                          f"acheteur/vendeur ({share:.2%} non classées > {limit:.0%}). Le delta ne peut pas "
                          "être calculé honnêtement à partir de simples OHLCV.")
@@ -146,6 +146,9 @@ def summarize(eng: Engine, cfg: dict) -> str:
                         f"DD max={(eq.cummax() - eq).max():8.2f} $")
         lines += rows
         lines.append("  sorties : " + ", ".join(f"{k} {v}" for k, v in Counter(tr["exit_reason"]).most_common()))
+        if "partial_done" in tr and tr["partial_level"].notna().any():
+            lines.append(f"  partiels : {tr['partial_done'].sum()} encaissés sur {tr['partial_level'].notna().sum()} "
+                         "trades fractionnables")
         lines.append(f"  excursions : MFE médiane {tr['mfe_r'].median():+.2f} R, MAE médiane {tr['mae_r'].median():+.2f} R ; "
                      f"{(tr['mfe_r'] >= 1).mean():.0%} des trades atteignent +1 R, "
                      f"{(tr['mfe_r'] >= tr['tp_r']).mean():.0%} la distance du TP (R:R visé médian {tr['tp_r'].median():.2f})")
@@ -207,7 +210,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Backtest du moteur de stratégie (phase 4)")
     p.add_argument("--start", required=True)
     p.add_argument("--end", required=True, help="date de fin exclue")
-    p.add_argument("--variant", default="A", choices=["A", "B", "C", "C_ABS"])
+    p.add_argument("--variant", default="A", choices=list(VARIANTS))
     p.add_argument("--holdout", action="store_true", help="autorise la période réservée (règles figées uniquement)")
     p.add_argument("--research", action="store_true",
                    help="mode recherche : limites de compte désactivées, chaque signal est testé (lecture en R)")

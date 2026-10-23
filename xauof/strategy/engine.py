@@ -33,10 +33,17 @@ from xauof.strategy.scenarios import ScenarioTracker
 from xauof.strategy.zones import ZoneBook, ZoneDetector
 
 VARIANTS = {
+    # V1 : scénarios obligatoires, objectif structurel
     "A": {"score": False, "trigger": "price"},
     "B": {"score": True, "trigger": "price"},
     "C": {"score": True, "trigger": "delta"},
     "C_ABS": {"score": True, "trigger": "absorption"},
+    # V2 (STRATEGY_V2.md) : direction de la zone, objectif en R, partiel + break-even.
+    # D = delta GC, P = réaction de prix seule (témoin) ; F = filtre « espace libre »
+    "V2_DF": {"score": False, "trigger": "delta", "v2": True, "space_filter": True},
+    "V2_D": {"score": False, "trigger": "delta", "v2": True, "space_filter": False},
+    "V2_PF": {"score": False, "trigger": "price", "v2": True, "space_filter": True},
+    "V2_P": {"score": False, "trigger": "price", "v2": True, "space_filter": False},
 }
 
 
@@ -71,6 +78,12 @@ class Position:
     commission: float = 0.0
     best: Optional[float] = None      # prix de sortie le plus favorable atteint (MFE)
     worst: Optional[float] = None     # prix de sortie le plus défavorable atteint (MAE)
+    lots_initial: float = 0.0
+    partial_level: Optional[float] = None   # V2 : prix de la sortie partielle (None = pas de partiel)
+    partial_lots: float = 0.0
+    partial_done: bool = False
+    partial_at: Optional[pd.Timestamp] = None
+    realized: float = 0.0             # gain brut déjà encaissé (partiel)
 
     def excursion_r(self, price: Optional[float]) -> Optional[float]:
         """Excursion en R (distance entrée → SL = 1 R)."""
@@ -110,12 +123,14 @@ class Engine:
 
     def __post_init__(self):
         if self.variant not in VARIANTS:
-            raise ValueError(f"variante inconnue {self.variant} (A, B, C, C_ABS)")
+            raise ValueError(f"variante inconnue {self.variant} ({', '.join(VARIANTS)})")
         if self.cfg["strategy"]["london_enabled"]:
             raise ValueError("strategy.london_enabled : session de Londres non implémentée en V1")
         if self.variant == "C_ABS" and not self.cfg["strategy"]["trigger"]["absorption_enabled"]:
             raise ValueError("variante C_ABS : activer strategy.trigger.absorption_enabled")
         self.v = VARIANTS[self.variant]
+        self.v2 = bool(self.v.get("v2"))
+        self.needs_levels = not self.v2 or bool(self.v.get("space_filter"))
         self.s = self.cfg["strategy"]
         self.tz = self.s["timezone"]
 
@@ -268,7 +283,7 @@ class Engine:
             why.append("une position est déjà ouverte")
         if self.entries_today >= r["max_entries_per_day"]:
             why.append(f"{self.entries_today} entrées déjà exécutées aujourd'hui")
-        if self.d.levels is None:
+        if self.d.levels is None and self.needs_levels:
             why.append(f"niveaux GC indisponibles : {self.d.levels_reason}")
         if not self.cal_ok and n["missing_calendar"] != "ignore_backtest_only":
             why.append("calendrier économique indisponible")
@@ -312,7 +327,9 @@ class Engine:
         if self.pending is not None and "une position est déjà ouverte" not in why:
             why.append("un ordre est déjà en attente")
         scenario, actifs = None, []
-        if lv is not None and self.scen is not None and not np.isnan(tol):
+        if self.v2:
+            pass                                       # V2 : la direction est celle de la zone
+        elif lv is not None and self.scen is not None and not np.isnan(tol):
             actifs = self.scen.active(s)
             for st in actifs:
                 if st.direction != z.direction:
@@ -335,7 +352,7 @@ class Engine:
             why.append(f"score {sc['score']}/3 < {self.s['min_score_families']} familles")
         info |= {"scenarios_actifs": [{"nom": st.name, "sens": st.direction, "borne": st.bound,
                                        "distance_zone": z.distance(st.bound)} for st in actifs],
-                 "scenario": scenario.name if scenario else None,
+                 "scenario": "v2" if self.v2 else (scenario.name if scenario else None),
                  "scenario_info": scenario.info if scenario else None,
                  "score": sc, "atr_m5": self.atr_now, "tol_proche": tol,
                  "basis": basis, "ib_xau": self._ib_xau(s, basis), "donnees": self._data_stamp(s)}
@@ -343,8 +360,9 @@ class Engine:
             z.set(s, "consumed", " ; ".join(why))
             self.log(s, "contact_refuse", motifs=why, **info)
             return
-        z.set(s, "confirming", f"scénario {scenario.name}")
-        self.confirming[z.id] = {"zone": z, "contact_j": j, "scenario": scenario.name, "info": info}
+        name = "v2" if self.v2 else scenario.name
+        z.set(s, "confirming", f"scénario {name}")
+        self.confirming[z.id] = {"zone": z, "contact_j": j, "scenario": name, "info": info}
         self.log(s, "contact_eligible", **info)
 
     def _confirmations(self, j: int, close_t: pd.Timestamp) -> None:
@@ -401,9 +419,19 @@ class Engine:
         if direction * (entry - sl) <= 0:
             why.append("prix exécutable déjà au-delà du SL")
         lv = self.d.levels
-        extra = ([ctx.measured_move(direction, lv, self.s["value_area_source"])]
-                 if p.scenario == "breakout" and lv is not None else None)
-        tgt = ctx.target(direction, entry, lv, extra) if lv is not None else None
+        risk_px = direction * (entry - sl)
+        if self.v2:
+            v2 = self.s["v2"]
+            tgt = (entry + direction * v2["target_r"] * risk_px, f"{v2['target_r']:g} R") if risk_px > 0 else None
+            if self.v["space_filter"] and lv is not None and risk_px > 0:
+                obs = ctx.obstacle_before(direction, entry, entry + direction * v2["space_filter_r"] * risk_px, lv)
+                if obs:
+                    why.append(f"espace libre insuffisant : {obs[1]} à {direction * (obs[0] - entry) / risk_px:.2f} R "
+                               f"(< {v2['space_filter_r']:g} R)")
+        else:
+            extra = ([ctx.measured_move(direction, lv, self.s["value_area_source"])]
+                     if p.scenario == "breakout" and lv is not None else None)
+            tgt = ctx.target(direction, entry, lv, extra) if lv is not None else None
         if tgt is None:
             why.append("aucun objectif admissible dans le sens du trade")
         if p.scenario == "value_return" and lv is not None:
@@ -435,7 +463,18 @@ class Engine:
             z.set(s, "consumed", " ; ".join(why))
             self.log(s, "entree_refusee", motifs=why, **detail)
             return
-        pos = Position(z.id, p.scenario, direction, sz.lots, entry, sl, tgt[0], s, sz.risk_usd, sz.rr_net, tgt[1])
+        pos = Position(z.id, p.scenario, direction, sz.lots, entry, sl, tgt[0], s, sz.risk_usd, sz.rr_net, tgt[1],
+                       lots_initial=sz.lots)
+        if self.v2:
+            v2 = self.s["v2"]
+            plots = inst.round_lots_down(sz.lots * v2["partial_fraction"])
+            rest = round(sz.lots - plots, 8)
+            if plots >= inst.volume_min and rest >= inst.volume_min:
+                pos.partial_level = entry + direction * v2["partial_r"] * risk_px
+                pos.partial_lots = plots
+            else:
+                detail["partiel"] = f"aucun : volume {sz.lots} trop petit pour être fractionné"
+        detail["partiel_niveau"], detail["partiel_lots"] = pos.partial_level, pos.partial_lots
         half = inst.commission_rt * sz.lots / 2
         a.balance -= half
         pos.commission = half
@@ -475,23 +514,23 @@ class Engine:
         fav, adv = (h, lo) if pos.direction > 0 else (lo + sp, h + sp)
         pos.best = fav if pos.best is None else (max(pos.best, fav) if pos.direction > 0 else min(pos.best, fav))
         pos.worst = adv if pos.worst is None else (min(pos.worst, adv) if pos.direction > 0 else max(pos.worst, adv))
-        if pos.direction > 0:                                 # sorties au bid
-            if o <= pos.sl:
-                return self._close(s, o - inst.slippage, "SL (ouverture au-delà)")
-            if lo <= pos.sl:
-                return self._close(s, pos.sl - inst.slippage, "SL")
-            if h >= pos.tp:
-                return self._close(s, pos.tp, "TP")
-            worst = lo
-        else:                                                 # sorties à l'ask
-            ao, ah, al = o + sp, h + sp, lo + sp
-            if ao >= pos.sl:
-                return self._close(s, ao + inst.slippage, "SL (ouverture au-delà)")
-            if ah >= pos.sl:
-                return self._close(s, pos.sl + inst.slippage, "SL")
-            if al <= pos.tp:
-                return self._close(s, pos.tp, "TP")
-            worst = ah
+        # sorties : bid pour un achat, ask pour une vente. Conventions conservatrices :
+        # stop avant objectif dans une même bougie ; après un partiel, si la bougie
+        # repasse aussi par le nouveau stop, on considère le stop touché.
+        d = pos.direction
+        ox, fav_x, adv_x = (o, h, lo) if d > 0 else (o + sp, lo + sp, h + sp)
+        stop_name = "break-even" if pos.partial_done and pos.sl == pos.entry else "SL"
+        if d * (ox - pos.sl) <= 0:
+            return self._close(s, ox - d * inst.slippage, f"{stop_name} (ouverture au-delà)")
+        if d * (adv_x - pos.sl) <= 0:
+            return self._close(s, pos.sl - d * inst.slippage, stop_name)
+        if pos.partial_level is not None and not pos.partial_done and d * (fav_x - pos.partial_level) >= 0:
+            self._take_partial(s, pos.partial_level)
+            if d * (adv_x - pos.sl) <= 0:
+                return self._close(s, pos.sl - d * inst.slippage, "break-even (même bougie que le partiel)")
+        if d * (fav_x - pos.tp) >= 0:
+            return self._close(s, pos.tp, "TP" + (" (après partiel)" if pos.partial_done else ""))
+        worst = adv_x
         # contrôle permanent de l'equity (pire prix de la bougie, frais compris)
         eq_worst = a.balance + inst.pnl(pos.direction, pos.entry, worst, pos.lots) - inst.commission_rt * pos.lots / 2
         reason = a.breach(eq_worst)
@@ -505,6 +544,21 @@ class Engine:
             self._close(s, px - pos.direction * inst.slippage, reason)
             a.lock(s, reason, total=total)
 
+    def _take_partial(self, t: pd.Timestamp, price: float) -> None:
+        """V2 : sortie partielle (ordre limite, sans slippage), puis stop du reste au prix d'entrée."""
+        pos, inst, a = self.position, self.inst, self.account
+        gross = inst.pnl(pos.direction, pos.entry, price, pos.partial_lots)
+        half = inst.commission_rt * pos.partial_lots / 2
+        a.balance += gross - half
+        pos.realized += gross
+        pos.commission += half
+        pos.lots = round(pos.lots - pos.partial_lots, 8)
+        pos.partial_done, pos.partial_at = True, t
+        if self.s["v2"]["breakeven_after_partial"]:
+            pos.sl = pos.entry
+        self.log(t, "partiel", zone_id=pos.zone_id, prix=price, lots=pos.partial_lots, gain_brut=round(gross, 2),
+                 lots_restants=pos.lots, nouveau_sl=pos.sl, solde=round(a.balance, 2))
+
     def _close(self, t: pd.Timestamp, price: float, reason: str) -> None:
         pos, inst, a = self.position, self.inst, self.account
         half = inst.commission_rt * pos.lots / 2
@@ -512,7 +566,7 @@ class Engine:
         a.balance += gross - half
         pos.commission += half
         pos.exit, pos.closed_at, pos.exit_reason = price, t, reason
-        pos.pnl = gross - pos.commission
+        pos.pnl = pos.realized + gross - pos.commission
         self.position = None
         self.trades.append(pos)
         for z in self.book.zones:

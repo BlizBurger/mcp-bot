@@ -266,8 +266,8 @@ def test_calendar_windows_and_coverage():
 
 # --------------------------------------------------------------------------- gestion de position
 
-def _engine(cfg, fail_stop=False):
-    eng = Engine(cfg, "A", load_instrument(cfg), Account.from_config(cfg), Calendar.empty(), SimExecutor(fail_stop))
+def _engine(cfg, fail_stop=False, variant="A"):
+    eng = Engine(cfg, variant, load_instrument(cfg), Account.from_config(cfg), Calendar.empty(), SimExecutor(fail_stop))
     eng.account.roll(T0)
     eng.t_flat = T0 + pd.Timedelta(hours=5, minutes=10)
     eng.cal_ok = False
@@ -335,3 +335,79 @@ def test_daily_stop_closes_and_locks(cfg):
     assert eng.position is None and eng.account.day_locked
     assert "journalier" in eng.trades[-1].exit_reason
     assert eng.account.daily_loss(eng.account.balance) >= 150 - 1e-6
+
+
+# --------------------------------------------------------------------------- V2
+
+def _v2_pos(direction=1):
+    if direction > 0:
+        p = _pos(direction=1, entry=4200.0, sl=4196.0, tp=4208.0, lots=0.12)
+        p.partial_level = 4204.0
+    else:
+        p = _pos(direction=-1, entry=4200.0, sl=4204.0, tp=4192.0, lots=0.12)
+        p.partial_level = 4196.0
+    p.partial_lots, p.lots_initial = 0.06, 0.12
+    return p
+
+
+def _open(eng, pos):
+    """Comme une vraie entrée : demi-commission d'ouverture débitée."""
+    half = 6.0 * pos.lots / 2
+    eng.account.balance -= half
+    pos.commission = half
+    eng.position = pos
+
+
+def test_v2_partial_then_target(cfg):
+    eng = _engine(cfg, variant="V2_DF")
+    _open(eng, _v2_pos())
+    eng._manage(0, T0, _bar(4201, 4204.5, 4201, 4204))
+    assert eng.position.partial_done and eng.position.sl == 4200.0 and eng.position.lots == 0.06
+    eng._manage(1, T0, _bar(4204, 4208.2, 4202, 4208))
+    tr = eng.trades[-1]
+    assert tr.exit_reason == "TP (après partiel)"
+    assert tr.pnl == pytest.approx(0.06 * 4 * 100 + 0.06 * 8 * 100 - 6.0 * 0.12)
+    assert eng.account.balance == pytest.approx(10000 + tr.pnl)
+
+
+def test_v2_breakeven_in_same_bar_as_partial_is_conservative(cfg):
+    eng = _engine(cfg, variant="V2_DF")
+    _open(eng, _v2_pos())
+    eng._manage(0, T0, _bar(4201, 4205, 4199.5, 4203))
+    tr = eng.trades[-1]
+    assert tr.exit_reason == "break-even (même bougie que le partiel)"
+    assert tr.pnl == pytest.approx(0.06 * 4 * 100 + 0.06 * (-0.10) * 100 - 0.72)
+
+
+def test_v2_stop_before_partial_in_same_bar(cfg):
+    eng = _engine(cfg, variant="V2_DF")
+    _open(eng, _v2_pos())
+    eng._manage(0, T0, _bar(4201, 4205, 4195.5, 4197))
+    tr = eng.trades[-1]
+    assert tr.exit_reason == "SL" and not tr.partial_done
+    assert tr.pnl == pytest.approx(0.12 * -4.1 * 100 - 0.72)
+
+
+def test_v2_short_partial_uses_ask(cfg):
+    eng = _engine(cfg, variant="V2_DF")
+    eng.position = _v2_pos(direction=-1)
+    eng._manage(0, T0, _bar(4199, 4199.5, 4196.0, 4197))          # ask bas = 4196.3 > 4196 : pas de partiel
+    assert not eng.position.partial_done
+    eng._manage(1, T0, _bar(4197, 4197.5, 4195.6, 4196))          # ask bas = 4195.9 ≤ 4196 : partiel
+    assert eng.position.partial_done and eng.position.sl == 4200.0
+
+
+def test_v2_without_breakeven_keeps_stop(cfg):
+    cfg["strategy"]["v2"]["breakeven_after_partial"] = False
+    eng = _engine(cfg, variant="V2_DF")
+    eng.position = _v2_pos()
+    eng._manage(0, T0, _bar(4201, 4204.5, 4201, 4204))
+    assert eng.position.partial_done and eng.position.sl == 4196.0
+
+
+def test_obstacle_before_space_filter():
+    lv = _levels()                                        # POC 100, HVN 104-106, VAH 110 / 111
+    assert ctx.obstacle_before(1, 98.0, 101.0, lv) == (100.0, "POC vol")
+    assert ctx.obstacle_before(1, 101.5, 103.5, lv) is None   # POC TPO 101 derrière, HVN à 104 au-delà
+    assert ctx.obstacle_before(-1, 108.0, 105.5, lv) == (106.0, "HVN 104.00-106.00")
+
