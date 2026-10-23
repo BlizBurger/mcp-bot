@@ -58,3 +58,9 @@ def test_journal_sync_and_annotate(client):
     j = client.get("/api/journal").json()
     assert next(x for x in j["trades"] if x["id"] == tid)["criteres"] == ["Zone FVG/OB"]
     assert client.post("/api/journal/999", json={}).status_code == 404
+
+
+def test_price_is_live_tick(client):
+    s = client.get("/api/state").json()
+    assert s["prix"]["direct"] is True and s["prix"]["ask"] > s["prix"]["bid"]
+    assert s["prix"]["spread_pts"] == round((s["prix"]["ask"] - s["prix"]["bid"]) / 0.01)

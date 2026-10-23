@@ -42,6 +42,11 @@ class MT5Source:
     def account(self, now) -> Optional[dict]:
         return self.live.account(self.mt5, self.cfg, now)
 
+    def tick(self) -> Optional[dict]:
+        """Dernier prix en direct (comme l'affiche MT5)."""
+        t = self.mt5.symbol_info_tick(self.cfg["symbols"]["broker"])
+        return {"bid": float(t.bid), "ask": float(t.ask)} if t is not None and t.bid > 0 else None
+
     def levels(self, day) -> Optional[dict]:
         return lv.load_levels(self.cfg, day)
 
@@ -122,6 +127,10 @@ class DemoSource:
 
     def account(self, now) -> Optional[dict]:
         return {"balance": 10040.0, "equity": 10012.5, "realized_today": 40.0}
+
+    def tick(self) -> Optional[dict]:
+        t = self._ticks[self._ticks.index <= self.now()]
+        return None if t.empty else {"bid": float(t["bid"].iloc[-1]), "ask": float(t["ask"].iloc[-1])}
 
     def levels(self, day) -> Optional[dict]:
         return self._levels

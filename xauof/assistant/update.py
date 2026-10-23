@@ -35,6 +35,7 @@ def fetch_session(cfg: dict, client, session_day: pd.Timestamp) -> pd.DataFrame:
     req = dict(dataset=cfg["symbols"]["dataset"], symbols=[cfg["symbols"]["futures"]], stype_in="continuous",
                schema=cfg["data"]["schema"], start=a, end=b)
     cost = client.metadata.get_cost(**req)
+    print(f"  séance GC du {session_day:%Y-%m-%d} : coût Databento estimé {cost:.3f} $ (plafond {MAX_COST_USD:.2f} $)")
     if cost > MAX_COST_USD:
         raise SystemExit(f"STOP : coût estimé {cost:.2f} $ > {MAX_COST_USD:.2f} $ pour une séance")
     raw = client.timeseries.get_range(**req).to_df()

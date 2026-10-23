@@ -95,6 +95,13 @@ class Hub:
         snap = snapshot(cfg, xau, levels, self.calendar(now), now, account)
         if "erreur" in snap:
             return {"source": src.name, "maintenant": now.isoformat(), "erreur": snap["erreur"]}
+        try:
+            tick = src.tick()                      # prix en direct ; la logique reste sur bougies clôturées
+        except Exception:
+            tick = None
+        if tick:
+            snap["prix"].update(bid=tick["bid"], ask=tick["ask"],
+                                spread_pts=round((tick["ask"] - tick["bid"]) / cfg["broker"]["point"]), direct=True)
         m5 = xau[["open", "high", "low", "close"]].resample("5min").agg(
             {"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
         m5 = m5[m5.index + pd.Timedelta(minutes=5) <= now]

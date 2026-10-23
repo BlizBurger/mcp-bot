@@ -20,6 +20,18 @@ chart.timeScale().applyOptions({ rightOffset: 6 });
 const candles = chart.addCandlestickSeries({
   upColor: C.green, downColor: C.red, borderUpColor: C.green, borderDownColor: C.red,
   wickUpColor: C.green, wickDownColor: C.red,
+  // l'échelle inclut toujours le niveau d'hier (ou la borne d'IB) le plus proche au-dessus et en dessous
+  autoscaleInfoProvider: (original) => {
+    const r = original();
+    if (!r || !state || !state.prix) return r;
+    const p = state.prix.bid, lv = (state.niveaux || []).map((l) => l.prix);
+    if (state.ib) lv.push(state.ib.low, state.ib.high);
+    const above = lv.filter((x) => x > p), below = lv.filter((x) => x < p);
+    const pad = 0.6;
+    if (above.length) r.priceRange.maxValue = Math.max(r.priceRange.maxValue, Math.min(...above) + pad);
+    if (below.length) r.priceRange.minValue = Math.min(r.priceRange.minValue, Math.max(...below) - pad);
+    return r;
+  },
 });
 const of = LW.createChart($("ofchart"), { ...base, autoSize: true, rightPriceScale: { visible: true, borderColor: "rgba(0,229,255,0.15)" },
   leftPriceScale: { visible: false } });
