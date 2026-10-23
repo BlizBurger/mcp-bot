@@ -56,3 +56,17 @@ qui a passé l'étape 1 :
 
 Le holdout ne couvre que ~4 mois (environ 40 à 70 trades par hypothèse) : il ne peut
 confirmer qu'un effet nettement positif.
+
+## Résultats de l'étape 1 (2026-10-23, 2024-10-02 → 2026-06-30, 439 séances)
+
+| | Trades (hors news) | R net moyen | IC 95 % | Gagnants | Verdict |
+|---|---|---|---|---|---|
+| Base (ALERTES_PLAN.md) | 273 | −0,127 | [−0,286 ; +0,043] | 30 % | non validé |
+| H1 sens de la journée | 139 | −0,115 | [−0,352 ; +0,131] | 29 % | **échoue** |
+| H2 confirmation order flow | 185 | −0,189 | [−0,376 ; +0,010] | 30 % | **échoue** |
+
+Les deux hypothèses sont **abandonnées**. Le holdout (2026-07-01 →) n'a **pas** été utilisé et
+reste disponible pour une future hypothèse.
+
+Les sous-groupes (ex. H2 ventes +0,03 R) ne sont pas des résultats : choisis après coup, ils
+ne seraient qu'une nouvelle hypothèse à figer et tester sur des données neuves.
