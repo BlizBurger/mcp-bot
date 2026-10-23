@@ -17,3 +17,12 @@ def test_token_diagnostic():
     assert any("espaces" in p for p in token_diagnostic(" " + good))
     assert any("identifiant" in p for p in token_diagnostic("xauusd_of_bot"))
     assert any("guillemets" in p for p in token_diagnostic('"' + good + '"'))
+
+
+def test_clean_chat_id():
+    from xauof.web.telegram import clean_chat_id
+
+    assert clean_chat_id("6291755478      (Alex🫥)") == "6291755478"
+    assert clean_chat_id(" 6291755478 ") == "6291755478"
+    assert clean_chat_id("-1001234567890") == "-1001234567890"
+    assert clean_chat_id("") is None and clean_chat_id(None) is None

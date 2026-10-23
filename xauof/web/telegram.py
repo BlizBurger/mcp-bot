@@ -47,11 +47,21 @@ def token_diagnostic(token: str) -> list[str]:
     return problems
 
 
+def clean_chat_id(raw: str | None) -> str | None:
+    """Garde seulement l'identifiant numérique (ex. « 6291755478  (Alex) » → « 6291755478 »)."""
+    m = re.search(r"-?\d{5,}", raw or "")
+    return m.group(0) if m else None
+
+
 def main() -> None:
     import requests
 
     load_dotenv(ROOT / ".env", override=True)
-    token, chat = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
+    token, raw_chat = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
+    chat = clean_chat_id(raw_chat)
+    if raw_chat and chat != raw_chat.strip():
+        print(f"  ⚠ TELEGRAM_CHAT_ID contient du texte en trop : on utilise {chat}. "
+              f"Corrige la ligne en « TELEGRAM_CHAT_ID={chat} ».")
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN manquant dans .env (étape 1 : créer le bot avec @BotFather)")
     problems = token_diagnostic(token)
@@ -77,7 +87,8 @@ def main() -> None:
     r = requests.post(API.format(token=token.strip(), method="sendMessage"), timeout=10,
                       json={"chat_id": chat, "text": "🟡 XAUUSD OF\nTest réussi : les alertes Setup A+ arriveront ici."}).json()
     if not r.get("ok"):
-        raise SystemExit(f"Envoi refusé ({r.get('description')}) : vérifie TELEGRAM_CHAT_ID")
+        raise SystemExit(f"Envoi refusé ({r.get('description')}) avec TELEGRAM_CHAT_ID={chat}. Vide la ligne "
+                         "TELEGRAM_CHAT_ID dans .env, écris « bonjour » au bot, puis relance pour le retrouver.")
     print("Message de test envoyé : regarde ton Telegram ✅")
 
 

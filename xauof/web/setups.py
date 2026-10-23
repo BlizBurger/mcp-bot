@@ -98,13 +98,15 @@ def send_telegram(text: str) -> bool:
     from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env")
-    token, chat = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
+    from xauof.web.telegram import clean_chat_id
+
+    token, chat = os.getenv("TELEGRAM_BOT_TOKEN"), clean_chat_id(os.getenv("TELEGRAM_CHAT_ID"))
     if not token or not chat or os.getenv("XAUOF_NO_TELEGRAM"):
         return False
     try:
         import requests
 
-        r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+        r = requests.post(f"https://api.telegram.org/bot{token.strip()}/sendMessage",
                           json={"chat_id": chat, "text": f"🟡 XAUUSD OF\n{text}"}, timeout=10)
         return r.ok
     except Exception:
