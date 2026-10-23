@@ -9,11 +9,13 @@ Sorties : reports/strategy_<variante>_<début>_<fin>/ (journal.jsonl, trades.csv
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from xauof.bridge import basis as bs
@@ -77,8 +79,28 @@ def day_data(cfg: dict, data: dict, day: pd.Timestamp, levels, reason: str) -> D
     return DayData(day, sl(data["xau"]), sl(data["gc"]), sl(data["basis"]), levels, reason)
 
 
+def research_config(cfg: dict) -> dict:
+    """Mode recherche : limites de compte désactivées pour tester CHAQUE signal (mesure en R).
+    Les règles de signal, de taille, de coûts et de news restent identiques."""
+    c = copy.deepcopy(cfg)
+    c["risk"]["daily_stop_usd"] = 1e12
+    c["ftmo"]["daily_loss_limit_usd"] = 1e12
+    c["ftmo"]["max_loss_usd"] = 1e12
+    return c
+
+
+def bootstrap_ci(values, n: int = 5000, seed: int = 0) -> tuple[float, float]:
+    """Intervalle de confiance à 95 % de la moyenne (rééchantillonnage, graine fixe)."""
+    v = np.asarray(values, dtype=float)
+    if len(v) < 2:
+        return float("nan"), float("nan")
+    rng = np.random.default_rng(seed)
+    means = rng.choice(v, size=(n, len(v)), replace=True).mean(axis=1)
+    return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
+
+
 def run(cfg: dict, start, end, variant: str, holdout: bool = False, out_dir: Path | None = None,
-        data: dict | None = None) -> dict:
+        data: dict | None = None, research: bool = False) -> dict:
     hs = pd.Timestamp(cfg["validation"]["holdout_start"])
     if pd.Timestamp(end) > hs and not holdout:
         raise SystemExit(f"La période demandée empiète sur la période réservée (à partir du {hs:%Y-%m-%d}). "
@@ -91,6 +113,8 @@ def run(cfg: dict, start, end, variant: str, holdout: bool = False, out_dir: Pat
         raise SystemExit(f"Variante {variant} désactivée : la source GC ne classe pas assez de transactions "
                          f"acheteur/vendeur ({share:.2%} non classées > {limit:.0%}). Le delta ne peut pas "
                          "être calculé honnêtement à partir de simples OHLCV.")
+    if research:
+        cfg = research_config(cfg)
     inst = load_instrument(cfg)
     cal = Calendar.load(ROOT / cfg["news"]["calendar_dir"])
     eng = Engine(cfg, variant, inst, Account.from_config(cfg), cal, SimExecutor())
@@ -102,7 +126,7 @@ def run(cfg: dict, start, end, variant: str, holdout: bool = False, out_dir: Pat
         if eng.account.total_locked:
             eng.log(day, "arret", motif=eng.account.lock_reason)
             break
-    res = {"engine": eng, "days": days, "instrument": inst, "calendar_ok_days": sum(
+    res = {"engine": eng, "days": days, "instrument": inst, "research": research, "calendar_ok_days": sum(
         1 for r in eng.journal if r["type"] == "calendrier_absent")}
     if out_dir is not None:
         write_outputs(res, out_dir, cfg, variant, start, end)
@@ -111,17 +135,24 @@ def run(cfg: dict, start, end, variant: str, holdout: bool = False, out_dir: Pat
 
 def summarize(eng: Engine, cfg: dict) -> str:
     rows = []
-    tr = pd.DataFrame([t.__dict__ for t in eng.trades])
+    tr = trades_frame(eng)
     lines = [f"Variante {eng.variant} — {len(tr)} trades"]
     if not tr.empty:
-        tr["r"] = tr["pnl"] / tr["risk_usd"]
         for name, g in [("TOUS", tr)] + list(tr.groupby("scenario")):
             eq = g["pnl"].cumsum()
+            lo, hi = bootstrap_ci(g["r"])
             rows.append(f"  {name:<13} n={len(g):>4}  gagnants={(g['pnl'] > 0).mean():6.1%}  "
-                        f"R moyen={g['r'].mean():+.3f}  PnL={g['pnl'].sum():+9.2f} $  "
+                        f"R moyen={g['r'].mean():+.3f} [IC95 {lo:+.2f} ; {hi:+.2f}]  PnL={g['pnl'].sum():+9.2f} $  "
                         f"DD max={(eq.cummax() - eq).max():8.2f} $")
         lines += rows
         lines.append("  sorties : " + ", ".join(f"{k} {v}" for k, v in Counter(tr["exit_reason"]).most_common()))
+        lines.append(f"  excursions : MFE médiane {tr['mfe_r'].median():+.2f} R, MAE médiane {tr['mae_r'].median():+.2f} R ; "
+                     f"{(tr['mfe_r'] >= 1).mean():.0%} des trades atteignent +1 R, "
+                     f"{(tr['mfe_r'] >= tr['tp_r']).mean():.0%} la distance du TP (R:R visé médian {tr['tp_r'].median():.2f})")
+        losers = tr[tr["pnl"] <= 0]
+        if len(losers):
+            lines.append(f"  perdants : {(losers['mfe_r'] >= 1).mean():.0%} étaient passés par +1 R, "
+                         f"{(losers['mfe_r'] < 0.25).mean():.0%} ne sont jamais allés au-delà de +0,25 R")
     refus = Counter()
     generic = lambda m: re.sub(r"[-+]?\d[\d.,:\- ]*\d|\d", "#", m.split(" (")[0])  # noqa: E731
     for r in eng.journal:
@@ -137,14 +168,28 @@ def summarize(eng: Engine, cfg: dict) -> str:
     return "\n".join(lines)
 
 
+def trades_frame(eng: Engine) -> pd.DataFrame:
+    tr = pd.DataFrame([t.__dict__ for t in eng.trades])
+    if tr.empty:
+        return tr
+    tr["r"] = tr["pnl"] / tr["risk_usd"]
+    tr["mfe_r"] = [t.excursion_r(t.best) for t in eng.trades]
+    tr["mae_r"] = [t.excursion_r(t.worst) for t in eng.trades]
+    tr["tp_r"] = [t.excursion_r(t.tp) for t in eng.trades]
+    return tr
+
+
 def write_outputs(res: dict, out_dir: Path, cfg: dict, variant: str, start, end) -> None:
     eng = res["engine"]
     out_dir.mkdir(parents=True, exist_ok=True)
     with open(out_dir / "journal.jsonl", "w", encoding="utf-8") as f:
         for r in eng.journal:
             f.write(json.dumps(r, default=str, ensure_ascii=False) + "\n")
-    pd.DataFrame([t.__dict__ for t in eng.trades]).to_csv(out_dir / "trades.csv", index=False)
+    trades_frame(eng).to_csv(out_dir / "trades.csv", index=False)
     warn = []
+    if res.get("research"):
+        warn.append("ℹ MODE RECHERCHE : limites de compte (arrêt journalier, plancher FTMO) désactivées ; "
+                    "lire les résultats en R, pas comme une simulation de challenge")
     if not res["instrument"].verified:
         warn.append("⚠ spécifications XAUUSD NON vérifiées (lancer python -m xauof.data.symbol_spec)")
     if res["calendar_ok_days"]:
@@ -164,10 +209,13 @@ def main() -> None:
     p.add_argument("--end", required=True, help="date de fin exclue")
     p.add_argument("--variant", default="A", choices=["A", "B", "C", "C_ABS"])
     p.add_argument("--holdout", action="store_true", help="autorise la période réservée (règles figées uniquement)")
+    p.add_argument("--research", action="store_true",
+                   help="mode recherche : limites de compte désactivées, chaque signal est testé (lecture en R)")
     args = p.parse_args()
     cfg = load_config()
-    out = ROOT / "reports" / f"strategy_{args.variant}_{args.start}_{args.end}"
-    run(cfg, args.start, args.end, args.variant, args.holdout, out)
+    suffix = "_research" if args.research else ""
+    out = ROOT / "reports" / f"strategy_{args.variant}_{args.start}_{args.end}{suffix}"
+    run(cfg, args.start, args.end, args.variant, args.holdout, out, research=args.research)
 
 
 if __name__ == "__main__":

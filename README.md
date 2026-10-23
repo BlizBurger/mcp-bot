@@ -91,5 +91,8 @@ python -m xauof.strategy.run --start 2025-10-06 --end 2026-07-01 --variant A   #
 ```
 
 La période réservée (`validation.holdout_start`) est refusée sans `--holdout`.
+`--research` désactive les limites de compte pour tester chaque signal (lecture en R,
+avec intervalle de confiance et excursions MFE / MAE) ; sans cette option, le
+backtest simule le parcours réel du compte (arrêts journaliers, plancher FTMO).
 Analyse de l'entonnoir (où et pourquoi les zones sont abandonnées) :
 `python -m xauof.strategy.funnel reports/strategy_A_2025-10-06_2026-07-01`

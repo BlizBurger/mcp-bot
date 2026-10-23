@@ -69,6 +69,14 @@ class Position:
     exit_reason: str = ""
     pnl: float = 0.0
     commission: float = 0.0
+    best: Optional[float] = None      # prix de sortie le plus favorable atteint (MFE)
+    worst: Optional[float] = None     # prix de sortie le plus défavorable atteint (MAE)
+
+    def excursion_r(self, price: Optional[float]) -> Optional[float]:
+        """Excursion en R (distance entrée → SL = 1 R)."""
+        if price is None:
+            return None
+        return self.direction * (price - self.entry) / abs(self.entry - self.sl)
 
 
 @dataclass
@@ -463,6 +471,10 @@ class Engine:
             self._close(s, self._exit_price(pos.direction, bar["open"], bar["spread"]), forced)
             return
         o, h, lo = bar["open"], bar["high"], bar["low"]
+        # excursions (diagnostic MFE / MAE), aux prix de sortie : bid pour un achat, ask pour une vente
+        fav, adv = (h, lo) if pos.direction > 0 else (lo + sp, h + sp)
+        pos.best = fav if pos.best is None else (max(pos.best, fav) if pos.direction > 0 else min(pos.best, fav))
+        pos.worst = adv if pos.worst is None else (min(pos.worst, adv) if pos.direction > 0 else max(pos.worst, adv))
         if pos.direction > 0:                                 # sorties au bid
             if o <= pos.sl:
                 return self._close(s, o - inst.slippage, "SL (ouverture au-delà)")

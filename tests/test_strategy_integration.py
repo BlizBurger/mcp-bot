@@ -171,3 +171,27 @@ def test_breakout_bound_retest_is_optional(market):
     assert far not in motifs(run(loose, data, "A"))
     elig = lambda eng: sum(r["type"] == "contact_eligible" for r in eng.journal)  # noqa: E731
     assert elig(run(loose, data, "A")) >= elig(run(strict, data, "A"))
+
+
+def test_research_mode_lifts_account_limits_only(market):
+    cfg, data = market
+    rc = R.research_config(cfg)
+    assert rc["risk"]["daily_stop_usd"] > 1e9 and rc["ftmo"]["max_loss_usd"] > 1e9
+    assert rc["strategy"] == cfg["strategy"] and rc["costs"] == cfg["costs"]
+    assert cfg["risk"]["daily_stop_usd"] == 150                         # la config d'origine est intacte
+
+
+def test_trades_report_excursions(market):
+    cfg, data = market
+    eng = run(cfg, data, "A")
+    tr = R.trades_frame(eng)
+    assert (tr["mfe_r"] >= tr["mae_r"]).all()
+    assert (tr.loc[tr["exit_reason"] == "SL", "mae_r"] <= -1 + 1e-9).all()   # un SL touché = MAE ≤ -1 R
+    assert "excursions" in R.summarize(eng, cfg)
+
+
+def test_bootstrap_ci():
+    lo, hi = R.bootstrap_ci([1.0, -1.0] * 50)
+    assert lo < 0 < hi
+    lo, hi = R.bootstrap_ci([-1.0] * 30 + [0.5] * 10)
+    assert hi < 0
