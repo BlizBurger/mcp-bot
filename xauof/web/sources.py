@@ -71,16 +71,18 @@ class DemoSource:
         rng = np.random.default_rng(seed)
         start = pd.Timestamp(day, tz="America/New_York").tz_convert("UTC") - pd.Timedelta(hours=26)
         minutes = pd.date_range(start, start + pd.Timedelta(hours=40), freq="1min")
-        price, path = 4040.0, []
-        shocks = rng.normal(0, 0.45, len(minutes))
-        for k in rng.choice(len(minutes), 60, replace=False):
-            shocks[k:k + 3] += rng.choice([-1, 1]) * rng.uniform(1.5, 3.5)
-        for e in shocks:
-            price += 0.02 * (4040.0 - price) + e
-            path.append(price)
-        n = 12                                             # ticks par minute
-        tick_t = minutes.repeat(n) + pd.to_timedelta(np.tile(np.linspace(0, 59, n), len(minutes)), unit="s")
-        mid = np.repeat(path, n) + rng.normal(0, 0.12, len(tick_t))
+        # marche aléatoire TICK PAR TICK (retour lent vers 4040) : les bougies M1 s'enchaînent
+        # comme sur un vrai marché, sans trou entre la clôture et l'ouverture suivante
+        n = 20                                             # ticks par minute
+        tick_t = minutes.repeat(n) + pd.to_timedelta(np.tile(np.arange(n) * 3.0, len(minutes)), unit="s")
+        shocks = rng.normal(0, 0.45 / np.sqrt(n), len(tick_t))
+        for k in rng.choice(len(minutes), 60, replace=False):        # quelques impulsions (FVG / OB)
+            shocks[k * n:(k + 3) * n] += rng.choice([-1, 1]) * rng.uniform(1.5, 3.5) / n
+        mid = np.empty(len(tick_t))
+        price = 4040.0
+        for i, e in enumerate(shocks):
+            price += 0.02 / n * (4040.0 - price) + e
+            mid[i] = price
         spread = 0.30 + 0.05 * rng.random(len(tick_t))
         self._ticks = pd.DataFrame({"bid": mid - spread / 2, "ask": mid + spread / 2}, index=tick_t)
         bid = self._ticks["bid"].resample("1min").ohlc()
