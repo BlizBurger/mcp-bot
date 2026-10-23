@@ -85,5 +85,7 @@ prix à l'intérieur d'une minute. On tranche donc toujours dans le sens défavo
 
 ## Prérequis avant le verdict
 
-- Calendrier économique historique couvrant au moins juillet à septembre 2026.
+- ~~Calendrier économique historique couvrant au moins juillet à septembre 2026.~~
+  Fait le 2026-10-23 : `calendar/history/` (NFP, CPI, PPI, JOLTS, PIB, PCE, FOMC).
+  Ne couvre pas les ventes au détail, l'ISM ni les inscriptions au chômage.
 - Commission FTMO réelle relevée dans MT5 (actuellement estimée à 6 $/lot).

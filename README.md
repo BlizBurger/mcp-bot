@@ -80,6 +80,14 @@ sans décalage (sinon erreur de fuseau ou de changement d'heure).
 python -m xauof.bridge.check --start 2025-10-01 --end 2026-10-01
 ```
 
+## Calendrier économique
+
+```bash
+python -m xauof.news.history                # historique officiel → calendar/history/ (backtests)
+python -m xauof.news.calendar --import-ff   # live : semaine en cours (Forex Factory)
+python -m xauof.news.calendar --status      # couverture et prochaines annonces
+```
+
 ## Moteur de stratégie (phase 4)
 
 Règles complètes, hypothèses et limites : [STRATEGY.md](STRATEGY.md) (V1) et

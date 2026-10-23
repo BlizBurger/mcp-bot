@@ -98,10 +98,13 @@ avec les sorties `rejected` (taille), `duplicate`, `consumed` (contact sans trad
   lire dans l'historique MT5 et corriger `costs`.
 - **Spécifications XAUUSD** : valeurs par défaut tant que
   `python -m xauof.data.symbol_spec` n'a pas été lancé (MT5 ouvert).
-- **Calendrier économique historique absent.** Par défaut, le moteur bloque
-  toutes les entrées des jours sans calendrier. Pour un backtest exploratoire,
-  `news.missing_calendar: ignore_backtest_only` lève ce blocage, et le rapport est
-  alors marqué non représentatif.
+- **Calendrier économique** : l'historique officiel (`calendar/history/`, généré
+  par `python -m xauof.news.history`) couvre oct. 2024 → sept. 2026 pour NFP, CPI,
+  PPI, JOLTS, PIB, PCE et FOMC (dates réelles des archives BLS, BEA et Fed, y
+  compris les décalages de la paralysie budgétaire de fin 2025). **Non couverts**,
+  faute d'historique officiel accessible : ventes au détail, ISM, inscriptions
+  hebdomadaires au chômage, discours de la Fed. Un jour hors couverture = aucune
+  entrée (`missing_calendar: block`).
 - **Delta** : la variante C exige que la source GC classe les transactions
   acheteur/vendeur. La part non classée est contrôlée à chaque lancement, et la
   variante est refusée au-delà de 5 %.
@@ -111,15 +114,26 @@ avec les sorties `rejected` (taille), `duplicate`, `consumed` (contact sans trad
 - Les journées « degraded » de Databento ne sont pas exclues par le moteur, car
   cette information n'est connue qu'après coup.
 
-## Calendrier : format attendu (`data/calendar/`)
+## Calendrier économique
+
+| Usage | Dossier | Source |
+|---|---|---|
+| Backtests | `calendar/history/` (versionné) | archives officielles BLS, BEA, Fed : `python -m xauof.news.history` |
+| Live | `data/calendar/` (local) | flux Forex Factory, toutes les annonces « High » de la semaine |
 
 ```
-usd_events.csv : time_utc,currency,impact,kind,event
-                 2026-09-04 12:30:00+00:00,USD,High,NFP,Non-Farm Employment Change
-coverage.csv   : start_utc,end_utc   (périodes où la liste est COMPLÈTE)
+usd_events.csv : time_utc,currency,impact,kind,event,source
+coverage.csv   : start_utc,end_utc,scope   (périodes où la liste est COMPLÈTE)
 ```
 
-En live, `python -m xauof.news.calendar --import-ff` importe la semaine en cours.
+```bash
+python -m xauof.news.calendar --import-ff   # live : importe la semaine en cours
+python -m xauof.news.calendar --status      # couverture et prochaines annonces USD
+```
+
+En live, `ensure_fresh` importe automatiquement la semaine si l'horizon n'est pas
+couvert. En cas d'échec réseau, le calendrier reste non couvrant et les entrées
+sont bloquées.
 
 ## Journal des réglages
 

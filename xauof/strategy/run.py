@@ -23,7 +23,7 @@ from xauof.config import ROOT, load_config
 from xauof.data import gc_bars, store
 from xauof.indicators import sessions
 from xauof.indicators.check import day_bounds
-from xauof.news.calendar import Calendar
+from xauof.news.calendar import load_calendar
 from xauof.strategy import context as ctx
 from xauof.strategy.engine import VARIANTS, DayData, Engine, SimExecutor
 from xauof.strategy.instrument import load_instrument
@@ -116,7 +116,7 @@ def run(cfg: dict, start, end, variant: str, holdout: bool = False, out_dir: Pat
     if research:
         cfg = research_config(cfg)
     inst = load_instrument(cfg)
-    cal = Calendar.load(ROOT / cfg["news"]["calendar_dir"])
+    cal = load_calendar(cfg)
     eng = Engine(cfg, variant, inst, Account.from_config(cfg), cal, SimExecutor())
     days = [d for d in data["days"] if pd.Timestamp(start) <= d < pd.Timestamp(end)]
     for day in days:

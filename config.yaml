@@ -151,18 +151,19 @@ strategy:
 news:
   # Protections INTERNES (distinctes des règles contractuelles FTMO, qui dépendent
   # du programme et de la phase : ex. compte financé Standard = ±2 min).
-  calendar_dir: data/calendar     # usd_events.csv + coverage.csv (voir README)
+  # historique officiel versionné (backtests) + imports live Forex Factory (local)
+  calendar_dirs: [calendar/history, data/calendar]
+  live_dir: data/calendar
   blackout_before_min: 15
   blackout_after_min: 15
   flatten_before_min: 15
   flatten_kinds: [NFP, CPI, FOMC]
   currencies: [USD]
-  # block : aucun trade un jour sans calendrier (OBLIGATOIRE en live et pour tout
-  #         résultat qui compte).
+  # block : aucun trade un jour sans calendrier (défaut, obligatoire en live et pour
+  #         tout résultat qui compte). L'historique calendar/history couvre
+  #         oct. 2024 → sept. 2026 (NFP, CPI, PPI, JOLTS, PIB, PCE, FOMC).
   # ignore_backtest_only : backtest SANS filtre news, rapport marqué non représentatif.
-  # TEMPORAIRE : exploration sans calendrier historique. Remettre « block » dès que
-  # data/calendar/ contient les annonces USD de la période testée.
-  missing_calendar: ignore_backtest_only
+  missing_calendar: block
 
 validation:
   holdout_start: 2026-07-01       # période réservée hors échantillon : ne pas régler dessus
