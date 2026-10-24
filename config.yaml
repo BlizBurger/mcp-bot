@@ -84,9 +84,10 @@ ftmo:                             # profil FTMO 2-Step (à vérifier dans les co
   reset_timezone: Europe/Prague
 
 costs:
-  # Coûts ESTIMÉS. Commission FTMO métaux non vérifiée : ouvrir 0,01 lot en démo et
-  # lire la commission dans l'historique MT5, puis corriger ici.
-  commission_per_lot_round_trip: 6.0   # USD par lot aller-retour (hypothèse prudente)
+  # Commission FTMO XAUUSD VÉRIFIÉE le 2026-10-23 sur 4 trades démo (0,10 lot au total,
+  # commission -0,58 $) : ≈ 2,9 $ par lot et par côté au prix de ~4000 $ (≈ 0,0007 % du
+  # nominal), soit ≈ 5,8 $ par lot aller-retour. À revoir si le prix de l'or change beaucoup.
+  commission_per_lot_round_trip: 5.8   # USD par lot aller-retour
   slippage_price: 0.10                  # $ par once, appliqué aux ordres au marché et aux stops
 
 instrument:                       # XAUUSD — remplacé par data/xauusd/spec.json si présent

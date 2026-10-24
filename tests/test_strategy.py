@@ -20,6 +20,7 @@ T0 = pd.Timestamp("2026-09-15 12:20", tz="UTC")          # 08:20 New York (EDT)
 def cfg(tmp_path):
     c = copy.deepcopy(load_config())
     c["data"]["dir"] = str(tmp_path / "data")
+    c["costs"]["commission_per_lot_round_trip"] = 6.0      # chiffres des tests calculés avec 6 $/lot
     return c
 
 
