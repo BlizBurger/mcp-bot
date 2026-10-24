@@ -197,7 +197,22 @@ footer { padding: 10px 24px 18px; color: var(--muted); font-size: 11px; }
 @media (max-width: 700px) { #scene3d { height: 62vh; } }
 
 /* order flow 3D + réacteur (bas de l'onglet live) */
-.live3d-panel { margin-top: 14px; }
-#live3d { position: relative; height: 340px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+.left-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.live3d-panel { flex: 1; display: flex; flex-direction: column; }
+#live3d { position: relative; flex: 1; min-height: 340px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
 #live3d canvas { display: block; }
-@media (max-width: 700px) { #live3d { height: 420px; } }
+@media (max-width: 700px) { #live3d { min-height: 420px; } }
+
+/* ma semaine */
+.week-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.week-dots { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+.week-dots .dot3 { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 600 11px "JetBrains Mono";
+  border: 2px solid rgba(0, 229, 255, .25); color: var(--muted); }
+.week-dots .dot3.win { border-color: var(--green); color: var(--green); box-shadow: 0 0 14px rgba(0, 255, 163, .45); }
+.week-dots .dot3.loss { border-color: var(--red); color: var(--red); box-shadow: 0 0 14px rgba(255, 59, 107, .4); }
+.week-dots .dot3.extra { border-style: dashed; }
+.week-dots .dot3.goal { border-color: var(--gold); color: var(--gold); }
+.checklist label { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; cursor: pointer; color: var(--text); }
+.checklist label.done { color: var(--muted); text-decoration: line-through; }
+.checklist .ok { margin-top: 8px; font-weight: 600; }
+@media (max-width: 700px) { .week-grid { grid-template-columns: 1fr; } }

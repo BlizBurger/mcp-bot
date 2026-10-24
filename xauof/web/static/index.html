@@ -50,6 +50,7 @@
     </section>
 
     <section class="grid">
+      <div class="left-col">
       <div class="panel chart-panel">
         <div class="panel-head">
           <h2>XAUUSD <span class="muted" id="window">—</span></h2>
@@ -68,6 +69,18 @@
         <div class="panel-head of-head"><h3>ORDER FLOW <span class="tag">estimation ticks</span></h3>
           <span class="muted small">barres = pression par bougie · ligne = cumul depuis 08:20</span></div>
         <div id="ofchart"></div>
+      </div>
+      <div class="panel live3d-panel">
+        <div class="panel-head"><h2>ORDER FLOW <span class="accent">3D</span> · DISCIPLINE <span class="muted small">estimation ticks · 90 dernières minutes</span></h2>
+          <span class="muted small" id="reactor-text">—</span></div>
+        <div id="live3d"></div>
+        <div class="legend">
+          <span><i class="sw bull"></i>Minute acheteuse (monte)</span>
+          <span><i class="sw bear"></i>Minute vendeuse (descend)</span>
+          <span><i class="sw cyan"></i>CVD de la séance</span>
+          <span><i class="sw terrain"></i>Réacteur : limite de perte du jour utilisée</span>
+      </div>
+      </div>
       </div>
 
       <aside>
@@ -88,20 +101,24 @@
           <div><h3>ZONES ACTIVES</h3><div id="zones" class="mono small">—</div></div>
         </div>
         <div class="panel"><h3>ANNONCES USD</h3><div id="news" class="feed small"></div></div>
+        <div class="panel week-panel">
+          <div class="panel-head"><h2>MA SEMAINE <span class="muted small" id="week-range"></span></h2>
+            <span class="muted small" id="week-sum">—</span></div>
+          <div class="week-grid">
+            <div>
+              <h3>OBJECTIF : 2 BONS TRADES</h3>
+              <div id="week-dots" class="week-dots"></div>
+              <p class="muted small" id="week-note">—</p>
+            </div>
+            <div>
+              <h3>CHECKLIST AVANT D'ENTRER <span class="muted small">(remise à zéro chaque jour)</span></h3>
+              <div id="checklist" class="checklist"></div>
+            </div>
+          </div>
+        </div>
       </aside>
     </section>
 
-    <section class="panel live3d-panel">
-      <div class="panel-head"><h2>ORDER FLOW <span class="accent">3D</span> · DISCIPLINE <span class="muted small">estimation ticks · 90 dernières minutes</span></h2>
-        <span class="muted small" id="reactor-text">—</span></div>
-      <div id="live3d"></div>
-      <div class="legend">
-        <span><i class="sw bull"></i>Minute acheteuse (monte)</span>
-        <span><i class="sw bear"></i>Minute vendeuse (descend)</span>
-        <span><i class="sw cyan"></i>CVD de la séance</span>
-        <span><i class="sw terrain"></i>Réacteur : limite de perte du jour utilisée</span>
-      </div>
-    </section>
   </main>
 
   <main id="tab-journal" class="hidden">
@@ -162,5 +179,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
   <script type="module" src="/static/scene3d.js"></script>
   <script type="module" src="/static/live3d.js"></script>
+  <script src="/static/week.js"></script>
 </body>
 </html>

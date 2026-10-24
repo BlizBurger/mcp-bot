@@ -78,21 +78,27 @@ function riskColor(u) {
 
 // --- mise en page selon la largeur ----------------------------------------------------------
 let narrow = false;
+const view = { x: 0, y: 2 };                         // centre visé par la caméra
 function layout() {
   const w = box.clientWidth, h = box.clientHeight;
   if (!w || !h) return;
   renderer.setSize(w, h); composer.setSize(w, h); bloom.setSize(w, h);
   camera.aspect = w / h;
   narrow = w / h < 1.3;
+  let worldW, worldH;
   if (narrow) {                                      // téléphone : réacteur au-dessus de la ville
     city.position.set(0, -6, 0); city.scale.setScalar(0.62);
     reactor.position.set(0, 9, 0); reactor.scale.setScalar(0.85);
-    camera.position.set(0, 4, 46); camera.fov = 50;
+    camera.fov = 50; view.x = 0; view.y = 1.5; worldW = SW * 0.62 + 4; worldH = 30;
   } else {
     city.position.set(-7, -1, 0); city.scale.setScalar(1);
     reactor.position.set(SW / 2 + 6, 3, 0); reactor.scale.setScalar(1);
-    camera.position.set(4, 7, 37); camera.fov = 40;
+    camera.fov = 40; view.x = 2; view.y = 2; worldW = SW + 46; worldH = 2 * BAR_H + 10;
   }
+  // recul de la caméra pour que tout tienne, quelle que soit la taille du panneau
+  const vf = THREE.MathUtils.degToRad(camera.fov) / 2, hf = Math.atan(Math.tan(vf) * camera.aspect);
+  const dist = 1.08 * Math.max(worldW / 2 / Math.tan(hf), worldH / 2 / Math.tan(vf));
+  camera.position.set(view.x, view.y + dist * 0.16, dist);
   camera.updateProjectionMatrix();
 }
 new ResizeObserver(layout).observe(box);
@@ -160,8 +166,8 @@ function loop(t) {
   core.scale.setScalar(pulse); inner.scale.setScalar(pulse * 0.95);
   coreMat.color.copy(coreColor); innerMat.color.copy(coreColor);
   reactor.rotation.y = Math.sin(s * 0.3) * 0.35;
-  camera.position.x = (narrow ? 0 : 4) + Math.sin(s * 0.12) * 3;     // léger mouvement de caméra
-  camera.lookAt(narrow ? 0 : 4, narrow ? 1 : 2, 0);
+  camera.position.x = view.x + Math.sin(s * 0.12) * 3;     // léger mouvement de caméra
+  camera.lookAt(view.x, view.y, 0);
   composer.render();
 }
 
