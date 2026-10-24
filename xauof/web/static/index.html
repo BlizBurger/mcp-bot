@@ -90,6 +90,18 @@
         <div class="panel"><h3>ANNONCES USD</h3><div id="news" class="feed small"></div></div>
       </aside>
     </section>
+
+    <section class="panel live3d-panel">
+      <div class="panel-head"><h2>ORDER FLOW <span class="accent">3D</span> · DISCIPLINE <span class="muted small">estimation ticks · 90 dernières minutes</span></h2>
+        <span class="muted small" id="reactor-text">—</span></div>
+      <div id="live3d"></div>
+      <div class="legend">
+        <span><i class="sw bull"></i>Minute acheteuse (monte)</span>
+        <span><i class="sw bear"></i>Minute vendeuse (descend)</span>
+        <span><i class="sw cyan"></i>CVD de la séance</span>
+        <span><i class="sw terrain"></i>Réacteur : limite de perte du jour utilisée</span>
+      </div>
+    </section>
   </main>
 
   <main id="tab-journal" class="hidden">
@@ -149,5 +161,6 @@
   <script type="importmap">{"imports": {"three": "https://unpkg.com/three@0.160.0/build/three.module.js",
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
   <script type="module" src="/static/scene3d.js"></script>
+  <script type="module" src="/static/live3d.js"></script>
 </body>
 </html>

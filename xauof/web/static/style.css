@@ -195,3 +195,9 @@ footer { padding: 10px 24px 18px; color: var(--muted); font-size: 11px; }
 .scene-label { position: absolute; pointer-events: none; font: 600 11px "JetBrains Mono", monospace; padding: 1px 6px;
   border-radius: 4px; background: rgba(4, 6, 12, .75); border: 1px solid currentColor; white-space: nowrap; transform: translate(-50%, -50%); }
 @media (max-width: 700px) { #scene3d { height: 62vh; } }
+
+/* order flow 3D + réacteur (bas de l'onglet live) */
+.live3d-panel { margin-top: 14px; }
+#live3d { position: relative; height: 340px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+#live3d canvas { display: block; }
+@media (max-width: 700px) { #live3d { height: 420px; } }
