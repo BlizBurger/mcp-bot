@@ -23,6 +23,7 @@
     <nav>
       <button class="tab active" data-tab="live">LIVE</button>
       <button class="tab" data-tab="journal">JOURNAL</button>
+      <button class="tab" data-tab="3d">3D</button>
     </nav>
     <div class="clocks">
       <div><label>NEW YORK</label><b id="clock-ny">--:--</b></div>
@@ -102,6 +103,25 @@
     </section>
   </main>
 
+  <main id="tab-3d" class="hidden">
+    <section class="panel scene-panel">
+      <div class="panel-head"><h2>PAYSAGE DE LA SÉANCE <span class="muted small" id="scene-info">—</span></h2>
+        <button id="scene-spin" class="btn">⟳ rotation auto</button></div>
+      <div id="scene3d"></div>
+      <div class="legend">
+        <span><i class="sw terrain"></i>Activité du jour (ticks MT5)</span>
+        <span><i class="sw gold"></i>POC / value area d'hier</span>
+        <span><i class="sw cyan"></i>TPO d'hier</span>
+        <span><i class="sw line"></i>LVN</span>
+        <span><i class="sw ib"></i>IB du jour</span>
+        <span><i class="sw bull"></i>Zone achat</span>
+        <span><i class="sw bear"></i>Zone vente</span>
+        <span><i class="sw price"></i>Prix</span>
+      </div>
+      <p class="muted small">Glisse pour tourner · molette ou pincement pour zoomer. Vue de plaisir : elle ne donne aucun signal.</p>
+    </section>
+  </main>
+
   <div id="card-modal" class="modal hidden">
     <div class="modal-box panel">
       <div class="panel-head"><h2>VISUEL INSTAGRAM</h2><button id="card-close" class="btn">✕</button></div>
@@ -126,5 +146,8 @@
   <footer>Outil d'aide à la décision, aucun ordre n'est passé. Aucune stratégie testée n'a montré d'edge statistique : la décision reste la tienne.</footer>
   <script src="/static/app.js"></script>
   <script src="/static/card.js"></script>
+  <script type="importmap">{"imports": {"three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+  <script type="module" src="/static/scene3d.js"></script>
 </body>
 </html>

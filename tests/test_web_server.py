@@ -109,3 +109,12 @@ def test_phone_mode_requires_a_password(monkeypatch):
         phone_password()
     monkeypatch.setenv("XAUOF_WEB_PASSWORD", "assez-long-pour-passer")
     assert phone_password() == "assez-long-pour-passer"
+
+
+def test_terrain_grid_matches_session(client):
+    t = client.get("/api/terrain").json()
+    assert t["vide"] is False and len(t["grille"]) >= 1
+    assert all(len(row) == len(t["grille"][0]) for row in t["grille"])
+    assert sum(map(sum, t["grille"])) > 0 and t["maintenant"] > 0
+    top = t["prix_bas"] + t["pas_prix"] * (len(t["grille"][0]) - 1)
+    assert t["prix_bas"] < t["prix"] < top and t["ib"]["definitive"]

@@ -224,8 +224,9 @@ async function loadJournal() {
 $("sync").onclick = async () => { $("sync").textContent = "…"; try { await getJSON("/api/journal/sync", { method: "POST" }); } finally { $("sync").textContent = "⟳ Importer depuis MT5"; loadJournal(); } };
 document.querySelectorAll(".tab").forEach((b) => b.onclick = () => {
   document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active")); b.classList.add("active");
-  $("tab-live").classList.toggle("hidden", b.dataset.tab !== "live"); $("tab-journal").classList.toggle("hidden", b.dataset.tab !== "journal");
-  if (b.dataset.tab === "journal") loadJournal(); else drawOverlay();
+  for (const t of ["live", "journal", "3d"]) $(`tab-${t}`).classList.toggle("hidden", b.dataset.tab !== t);
+  document.dispatchEvent(new CustomEvent("tab", { detail: b.dataset.tab }));
+  if (b.dataset.tab === "journal") loadJournal(); else if (b.dataset.tab === "live") drawOverlay();
 });
 
 loadState(); loadBars();

@@ -253,6 +253,37 @@ def create_app(cfg: dict, source, alert_loop: bool = True, password: str | None 
         return [{"time": chart_time(t), "open": r.open, "high": r.high, "low": r.low, "close": r.close}
                 for t, r in xau.iterrows()]
 
+    @app.get("/api/terrain")
+    def terrain(step_min: int = 5, price_step: float = 0.5):
+        """Paysage 3D de la séance : activité (ticks MT5) par tranche de temps et de prix."""
+        now = source.now()
+        day, _, _ = hub.day_bars(now)
+        t0 = ny_time(day, cfg["strategy"]["entry_start"], NY)
+        if now <= t0:
+            t0 = now - pd.Timedelta(hours=2)
+        ticks = source.ticks(t0, now)
+        st = hub.state()
+        if ticks.empty or "erreur" in st:
+            return {"vide": True}
+        mid = (ticks["bid"] + ticks["ask"]) / 2
+        lo = float(np.floor(mid.min() / price_step) * price_step) - 2 * price_step
+        hi = float(np.ceil(mid.max() / price_step) * price_step) + 2 * price_step
+        n_p = int(round((hi - lo) / price_step)) + 1
+        t_idx = ((mid.index - t0) // pd.Timedelta(minutes=step_min)).astype(int)
+        p_idx = np.clip(np.round((mid.to_numpy() - lo) / price_step).astype(int), 0, n_p - 1)
+        n_t = int(t_idx.max()) + 1
+        grid = np.zeros((n_t, n_p), dtype=int)
+        np.add.at(grid, (np.asarray(t_idx), p_idx), 1)
+        def t_of(ts):                                   # position (en tranches) d'un instant
+            return float((pd.Timestamp(ts) - t0) / pd.Timedelta(minutes=step_min))
+        zones = [{"sens": z["sens"], "bas": z["bas"], "haut": z["haut"],
+                  "depuis": max(0.0, (z["depuis"] - chart_time(t0)) / (60 * step_min))} for z in st["zones"]]
+        return {"vide": False, "debut": chart_time(t0), "pas_min": step_min, "prix_bas": lo, "pas_prix": price_step,
+                "grille": grid.tolist(), "maintenant": t_of(now), "prix": st["prix"]["bid"],
+                "niveaux": [{"nom": x["nom"], "prix": x["prix"], "type": x["type"]} for x in st["niveaux"]],
+                "ib": st["ib"], "ib_fin": t_of(t0 + pd.Timedelta(minutes=cfg["sessions"]["initial_balance_min"]))
+                if now > ny_time(day, cfg["strategy"]["entry_start"], NY) else None, "zones": zones}
+
     @app.get("/api/orderflow")
     def orderflow(tf: int = 1):
         now = source.now()
