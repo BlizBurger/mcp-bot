@@ -218,3 +218,6 @@ footer { padding: 10px 24px 18px; color: var(--muted); font-size: 11px; }
 @media (max-width: 700px) { .week-grid { grid-template-columns: 1fr; } }
 .week-disc { display: flex; flex-direction: column; gap: 4px; font-size: 12px; margin-top: 6px; }
 .week-disc .up, .week-disc .down { text-shadow: none; }
+.scene-tip { position: absolute; z-index: 3; pointer-events: none; max-width: 340px; padding: 10px 12px; font-size: 12px; line-height: 1.5;
+  background: rgba(4, 6, 12, .92); border: 1px solid var(--cyan); border-radius: 10px; box-shadow: var(--glow); }
+.scene-tip .up, .scene-tip .down { text-shadow: none; }

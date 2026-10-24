@@ -26,7 +26,7 @@ from xauof.assistant.snapshot import ny_time, snapshot
 from xauof.indicators.smc import atr as smc_atr
 from xauof.news.calendar import Calendar, load_calendar
 from xauof.web import journal as jr
-from xauof.web.orderflow_proxy import proxy_bars
+from xauof.web.orderflow_proxy import proxy_bars, tick_signs
 from xauof.strategy.instrument import load_instrument
 from xauof.web.setups import AlertCenter, qualify, trade_plan
 
@@ -278,12 +278,21 @@ def create_app(cfg: dict, source, alert_loop: bool = True, password: str | None 
         n_t = int(t_idx.max()) + 1
         grid = np.zeros((n_t, n_p), dtype=int)
         np.add.at(grid, (np.asarray(t_idx), p_idx), 1)
+        # par tranche : bougie (milieu bid/ask), pression (règle du tick) et CVD en fin de tranche
+        sign = pd.Series(tick_signs(mid.to_numpy()), index=mid.index)
+        g = pd.DataFrame({"t": np.asarray(t_idx), "p": mid.to_numpy(), "s": sign.to_numpy()}).groupby("t")
+        agg = pd.DataFrame({"o": g["p"].first(), "h": g["p"].max(), "l": g["p"].min(), "c": g["p"].last(),
+                            "delta": g["s"].sum(), "ticks": g["p"].size()}).reindex(range(n_t))
+        agg["cvd"] = agg["delta"].fillna(0).cumsum()
+        tranches = [None if pd.isna(r.o) else {"o": round(r.o, 2), "h": round(r.h, 2), "l": round(r.l, 2),
+                                                "c": round(r.c, 2), "delta": int(r.delta), "ticks": int(r.ticks),
+                                                "cvd": int(r.cvd)} for r in agg.itertuples()]
         def t_of(ts):                                   # position (en tranches) d'un instant
             return float((pd.Timestamp(ts) - t0) / pd.Timedelta(minutes=step_min))
         zones = [{"sens": z["sens"], "bas": z["bas"], "haut": z["haut"],
                   "depuis": max(0.0, (z["depuis"] - chart_time(t0)) / (60 * step_min))} for z in st["zones"]]
-        return {"vide": False, "debut": chart_time(t0), "pas_min": step_min, "prix_bas": lo, "pas_prix": price_step,
-                "grille": grid.tolist(), "maintenant": t_of(now), "prix": st["prix"]["bid"],
+        return {"vide": False, "debut": chart_time(t0), "debut_utc": int(t0.value // 10**9), "pas_min": step_min, "prix_bas": lo, "pas_prix": price_step,
+                "grille": grid.tolist(), "tranches": tranches, "maintenant": t_of(now), "prix": st["prix"]["bid"],
                 "niveaux": [{"nom": x["nom"], "prix": x["prix"], "type": x["type"]} for x in st["niveaux"]],
                 "ib": st["ib"], "ib_fin": t_of(t0 + pd.Timedelta(minutes=cfg["sessions"]["initial_balance_min"]))
                 if now > ny_time(day, cfg["strategy"]["entry_start"], NY) else None, "zones": zones}

@@ -45,7 +45,7 @@ const floor = new THREE.GridHelper(W + 12, 38, 0x0b3a4a, 0x08202c);
 floor.position.y = -0.02;
 scene.add(floor);
 
-let world = new THREE.Group(), labels = [], active = false, pulse = null, framed = false;
+let world = new THREE.Group(), labels = [], active = false, pulse = null, framed = false, hover = null;
 scene.add(world);
 
 function dispose(obj) {
@@ -95,8 +95,13 @@ function build(d) {
   sg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   sg.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   sg.setIndex(idx);
-  world.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.14,
-    side: THREE.DoubleSide, depthWrite: false })));
+  const surface = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.14,
+    side: THREE.DoubleSide, depthWrite: false }));
+  world.add(surface);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));    // cible invisible du survol
+  world.add(ground);
+  hover = { d, nT, nP, span, X, Z, hgt, surface, ground };
   for (let i = 0; i < nT; i++) {
     const pts = [], cols = [];
     for (let j = 0; j < nP; j++) {
@@ -173,6 +178,79 @@ function build(d) {
     `${nT * d.pas_min} min de séance · ${g.flat().reduce((a, b) => a + b, 0).toLocaleString("fr-FR")} ticks`;
 }
 
+// --- survol : info-bulle sur le point visé -------------------------------------------------
+const tip = document.createElement("div");
+tip.className = "scene-tip hidden";
+box.appendChild(tip);
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+const marker = new THREE.Group();
+const mDot = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+const mPole = line([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0)], 0xffffff, 0.6);
+const mSlice = line([new THREE.Vector3(0, 0, -D / 2), new THREE.Vector3(0, 0, D / 2)], 0xffffff, 0.35);
+marker.add(mDot, mPole, mSlice);
+marker.visible = false;
+scene.add(marker);
+
+const hhmm = (sec, tz) => new Date(sec * 1000).toLocaleTimeString("fr-FR", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+const sgn = (x, n = 2) => (x > 0 ? "+" : "") + Number(x).toFixed(n);
+
+function describe(i, j, price) {
+  const { d, nT } = hover, t = d.debut_utc + i * d.pas_min * 60;
+  const head = `<b>${hhmm(t, "America/New_York")}–${hhmm(t + d.pas_min * 60, "America/New_York")} NY</b>`
+    + ` <span class="muted">· ${hhmm(t, "Europe/Paris")} Paris</span>`;
+  const tr = i < nT ? d.tranches[i] : null;
+  if (!tr) return `${head}<div class="muted">Pas de cotation à cette heure (pas encore jouée ou marché calme).</div>`;
+  const row = d.grille[i], ticks = row[j] ?? 0, rowMax = Math.max(1, ...row);
+  const out = [head, `<div>Prix visé : <b>${price.toFixed(2)}</b> · activité ${ticks} ticks (${Math.round(100 * ticks / rowMax)} % du max de la tranche)</div>`,
+    `<div>Bougie 5 min : O ${tr.o.toFixed(2)} · H ${tr.h.toFixed(2)} · B ${tr.l.toFixed(2)} · C <b>${tr.c.toFixed(2)}</b>`
+    + ` <span class="${tr.c >= tr.o ? "up" : "down"}">(${sgn(tr.c - tr.o)} $)</span></div>`,
+    `<div>Pression : <b class="${tr.delta >= 0 ? "up" : "down"}">${sgn(tr.delta, 0)}</b> ${tr.delta >= 0 ? "acheteurs" : "vendeurs"}`
+    + ` · CVD ${sgn(tr.cvd, 0)} <span class="muted">(estimation ticks)</span></div>`];
+  // POC du jour jusqu'à cette tranche (prix le plus actif depuis le début de séance)
+  const acc = d.grille[0].map((_, k) => d.grille.slice(0, i + 1).reduce((s, r) => s + r[k], 0));
+  const kPoc = acc.indexOf(Math.max(...acc));
+  out.push(`<div>POC du jour à cette heure : <b>${(d.prix_bas + kPoc * d.pas_prix).toFixed(2)}</b></div>`);
+  const vah = d.niveaux.find((l) => l.nom === "VAH vol"), val = d.niveaux.find((l) => l.nom === "VAL vol");
+  if (vah && val) out.push(`<div>Value area d'hier : ${price > vah.prix ? "<b>au-dessus</b>" : price < val.prix ? "<b>en dessous</b>" : "<b>dedans</b>"}`
+    + ` <span class="muted">(${val.prix.toFixed(2)}–${vah.prix.toFixed(2)})</span></div>`);
+  const near = d.niveaux.filter((l) => l.type !== "HVN" && l.type !== "SP")
+    .sort((a, b) => Math.abs(a.prix - price) - Math.abs(b.prix - price))[0];
+  if (near) out.push(`<div>Niveau d'hier le plus proche : <b>${near.nom} ${near.prix.toFixed(2)}</b> (${sgn(near.prix - price)} $)</div>`);
+  if (d.ib && d.ib_fin && i + 1 > d.ib_fin) out.push(`<div>IB : ${price > d.ib.high ? "au-dessus du haut" : price < d.ib.low ? "sous le bas" : "dedans"}`
+    + ` <span class="muted">(${d.ib.low.toFixed(2)}–${d.ib.high.toFixed(2)})</span></div>`);
+  const zn = d.zones.find((z) => z.depuis <= i + 1 && price >= z.bas - 0.25 && price <= z.haut + 0.25);
+  if (zn) out.push(`<div class="${zn.sens > 0 ? "up" : "down"}">Dans une zone ${zn.sens > 0 ? "d'achat" : "de vente"} FVG/OB (${zn.bas.toFixed(2)}–${zn.haut.toFixed(2)})</div>`);
+  return out.join("");
+}
+
+function onPointer(e) {
+  if (!hover) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObject(hover.surface)[0] || ray.intersectObject(hover.ground)[0];
+  if (!hit) { tip.classList.add("hidden"); marker.visible = false; return; }
+  hovering = true; controls.autoRotate = false;
+  const { d, nP, span, X, Z, hgt } = hover, p = hit.point;
+  const i = Math.max(0, Math.min(span - 1, Math.floor(((p.x + W / 2) / W) * span)));
+  const j = Math.max(0, Math.min(nP - 1, Math.round(((D / 2 - p.z) / D) * (nP - 1))));
+  const price = d.prix_bas + j * d.pas_prix, y = i < hover.nT ? hgt[i][j] : 0;
+  marker.visible = true;
+  mDot.position.set(X(i + 0.5), y + 0.35, Z(price));
+  mPole.position.set(X(i + 0.5), 0, Z(price)); mPole.scale.set(1, y + 0.35, 1);
+  mSlice.position.set(X(i + 0.5), 0.05, 0);
+  tip.innerHTML = describe(i, j, price);
+  tip.classList.remove("hidden");
+  const bx = box.getBoundingClientRect(), x = e.clientX - bx.left, yy = e.clientY - bx.top;
+  tip.style.left = `${Math.min(x + 16, bx.width - tip.offsetWidth - 8)}px`;
+  tip.style.top = `${Math.min(yy + 16, bx.height - tip.offsetHeight - 8)}px`;
+}
+renderer.domElement.addEventListener("pointermove", onPointer);
+renderer.domElement.addEventListener("pointerdown", onPointer);           // tactile : un appui affiche l'info
+renderer.domElement.addEventListener("pointerleave", () => {
+  tip.classList.add("hidden"); marker.visible = false; hovering = false; controls.autoRotate = autoSpin;
+});
+
 function resize() {
   const w = box.clientWidth, h = box.clientHeight;
   if (!w || !h) return;
@@ -211,7 +289,8 @@ async function refresh() {
   } catch (e) { document.getElementById("scene-info").textContent = "serveur injoignable"; }
 }
 
-document.getElementById("scene-spin").onclick = () => { controls.autoRotate = !controls.autoRotate; };
+let autoSpin = true, hovering = false;               // la rotation s'arrête pendant le survol
+document.getElementById("scene-spin").onclick = () => { autoSpin = !autoSpin; controls.autoRotate = autoSpin && !hovering; };
 document.addEventListener("tab", (e) => {
   const was = active;
   active = e.detail === "3d";

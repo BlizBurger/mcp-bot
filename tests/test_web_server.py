@@ -120,6 +120,9 @@ def test_terrain_grid_matches_session(client):
     assert sum(map(sum, t["grille"])) > 0 and t["maintenant"] > 0
     top = t["prix_bas"] + t["pas_prix"] * (len(t["grille"][0]) - 1)
     assert t["prix_bas"] < t["prix"] < top and t["ib"]["definitive"]
+    tr = [x for x in t["tranches"] if x]
+    assert len(t["tranches"]) == len(t["grille"]) and all(x["l"] <= min(x["o"], x["c"]) <= max(x["o"], x["c"]) <= x["h"] for x in tr)
+    assert sum(x["ticks"] for x in tr) == sum(map(sum, t["grille"]))
 
 
 def test_weekend_without_bars_does_not_crash(tmp_path):
