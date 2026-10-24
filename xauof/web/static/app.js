@@ -168,7 +168,17 @@ function banner(text, cls) { const b = $("banner"); b.textContent = text; b.clas
 
 /* ---------------------------------------------------------------- boucles */
 async function getJSON(url, opt) { const r = await fetch(url, opt); if (!r.ok) throw new Error(r.status); return r.json(); }
-async function loadState() { try { render(await getJSON("/api/state")); } catch (e) { $("live-dot").className = "dot off"; banner("Serveur injoignable", ""); } }
+async function loadState() {
+  let s;
+  try { s = await getJSON("/api/state"); } catch (e) {
+    if (e.message === "401") { location.href = "/login"; return; }          // session expirée (mode --phone)
+    $("live-dot").className = "dot off";
+    banner(e.message === "Failed to fetch" || e.name === "TypeError" ? "Serveur injoignable : l'interface est-elle lancée sur le PC ?"
+      : `Erreur du serveur (${e.message}) : regarde le terminal PowerShell`, "");
+    return;
+  }
+  try { render(s); } catch (e) { banner(`Erreur d'affichage : ${e.message}`, "warn"); }
+}
 async function loadBars() {
   try {
     bars = await getJSON(`/api/bars?tf=${tf}`); candles.setData(bars);

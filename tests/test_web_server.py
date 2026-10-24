@@ -3,6 +3,7 @@ import copy
 import os
 
 import pytest
+import pandas as pd
 from fastapi.testclient import TestClient
 
 from xauof.config import load_config
@@ -119,3 +120,26 @@ def test_terrain_grid_matches_session(client):
     assert sum(map(sum, t["grille"])) > 0 and t["maintenant"] > 0
     top = t["prix_bas"] + t["pas_prix"] * (len(t["grille"][0]) - 1)
     assert t["prix_bas"] < t["prix"] < top and t["ib"]["definitive"]
+
+
+def test_weekend_without_bars_does_not_crash(tmp_path):
+    """Samedi : MT5 ne renvoie aucune bougie → message « marché fermé », pas d'erreur 500."""
+    from xauof.data.xauusd import normalize_rates
+
+    class Closed(DemoSource):
+        def now(self):
+            return pd.Timestamp("2026-10-24 11:00", tz="America/New_York").tz_convert("UTC")
+
+        def bars_m1(self, start, end):
+            return normalize_rates([], "America/New_York+7")
+
+        def ticks(self, start, end):
+            return pd.DataFrame(columns=["bid", "ask"])
+
+    cfg = copy.deepcopy(load_config())
+    cfg["data"]["dir"] = str(tmp_path / "data")
+    with TestClient(create_app(cfg, Closed(cfg, speed=0.0), alert_loop=False)) as c:
+        s = c.get("/api/state")
+        assert s.status_code == 200 and "Marché fermé" in s.json()["erreur"]
+        assert c.get("/api/bars?tf=5").json() == [] and c.get("/api/orderflow?tf=5").json() == []
+        assert c.get("/api/terrain").json()["vide"] is True

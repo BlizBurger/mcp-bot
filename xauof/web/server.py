@@ -249,6 +249,8 @@ def create_app(cfg: dict, source, alert_loop: bool = True, password: str | None 
     def bars(tf: int = 1):
         now = source.now()
         _, _, xau = hub.day_bars(now)
+        if xau.empty:
+            return []
         if tf == 5:
             xau = xau[["open", "high", "low", "close"]].resample("5min").agg(
                 {"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()

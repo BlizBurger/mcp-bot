@@ -54,8 +54,9 @@ def mt5_time(ts: pd.Timestamp, spec: str):
 def normalize_rates(rates, server_clock: str) -> pd.DataFrame:
     """Tableau MT5 (time, open, high, low, close, tick_volume, spread, ...) → DataFrame UTC."""
     df = pd.DataFrame(rates)
-    if df.empty:
-        return df
+    if df.empty:                                  # week-end, marché fermé : tableau vide mais au bon format
+        return pd.DataFrame(columns=["open", "high", "low", "close", "tick_volume", "spread"],
+                            index=pd.DatetimeIndex([], tz="UTC", name="time"), dtype=float)
     server_time = pd.to_datetime(df["time"], unit="s")  # heure serveur, sans fuseau
     df.index = pd.DatetimeIndex(server_to_utc(server_time, server_clock), name="time")
     df = df[df.index.notna()]

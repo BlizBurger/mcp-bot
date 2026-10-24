@@ -82,7 +82,12 @@ def snapshot(cfg: dict, xau_m1: pd.DataFrame, levels: Optional[dict], calendar: 
 
     closed = xau_m1[xau_m1.index + pd.Timedelta(minutes=1) <= now]
     if closed.empty:
-        out["erreur"] = "aucune bougie XAUUSD"
+        local = now.tz_convert(tz)
+        closed_mkt = local.weekday() == 5 or (local.weekday() == 6 and local.hour < 18) or \
+            (local.weekday() == 4 and local.hour >= 17)
+        out["erreur"] = ("Marché fermé (week-end) : réouverture dimanche 18:00 New York. "
+                         "Pour voir l'interface tourner : python -m xauof.web --demo") if closed_mkt else \
+            "Aucune bougie XAUUSD reçue de MT5 pour l'instant (MT5 connecté ?)"
         return out
     last = closed.iloc[-1]
     out["prix"] = {"bid": float(last["close"]), "ask": float(last["close"] + last["spread"] * point),
