@@ -83,7 +83,6 @@ function drawOverlay() {
     ctx.fillStyle = bull ? C.green : C.red; ctx.font = "10px JetBrains Mono";
     ctx.fillText(`${z.type} ${bull ? "▲" : "▼"}`, x0 + 4, y1 - 3);
   }
-  drawLevelNames(ctx, y);
   drawProfiles();
 }
 
@@ -137,25 +136,7 @@ function setLevelLines() {
     else if (l.nom === "VAH vol" || l.nom === "VAL vol") opt = { color: C.gold, lineWidth: 1, lineStyle: LW.LineStyle.Dashed };
     else if (l.type === "POC" || l.type === "VAH" || l.type === "VAL") opt = { color: C.cyan, lineWidth: 1, lineStyle: LW.LineStyle.Dotted };
     else if (l.type === "LVN") opt = { color: C.grey, lineWidth: 1, lineStyle: LW.LineStyle.SparseDotted };
-    // pas de titre dans la zone des bougies (il cachait les dernières) : le nom est écrit à gauche par l'overlay
-    if (opt) priceLines.push(candles.createPriceLine({ price: l.prix, axisLabelVisible: true, title: "", ...opt }));
-  }
-}
-const LEVEL_COLORS = (l) => l.nom === "POC vol" || l.nom === "VAH vol" || l.nom === "VAL vol" ? C.gold
-  : ["POC", "VAH", "VAL"].includes(l.type) ? C.cyan : l.type === "LVN" ? C.grey : null;
-function drawLevelNames(ctx, y) {
-  // noms des niveaux à GAUCHE du graphique ; côte à côte quand plusieurs niveaux sont proches
-  const items = (state.niveaux || []).map((l) => ({ l, c: LEVEL_COLORS(l), yy: y(l.prix) }))
-    .filter((x) => x.c && x.yy !== null).sort((a, b) => a.yy - b.yy);
-  ctx.font = "10px JetBrains Mono";
-  let lastY = -99, x = 6;
-  for (const { l, c, yy } of items) {
-    x = Math.abs(yy - lastY) < 12 ? x : 6;
-    const txt = l.nom, w = ctx.measureText(txt).width + 8;
-    ctx.fillStyle = "rgba(4,6,12,0.78)"; ctx.fillRect(x, yy - 12, w, 12);
-    ctx.fillStyle = c; ctx.fillText(txt, x + 4, yy - 3);
-    if (Math.abs(yy - lastY) >= 12) lastY = yy;
-    x += w + 4;
+    if (opt) priceLines.push(candles.createPriceLine({ price: l.prix, axisLabelVisible: true, title: l.nom, ...opt }));
   }
 }
 
@@ -242,14 +223,21 @@ async function loadState() {
 }
 async function loadBars() {
   try {
-    bars = await getJSON(`/api/bars?tf=${tf}`); candles.setData(bars);
+    bars = await getJSON(`/api/bars?tf=${tf}`);
+    const ofd = await getJSON(`/api/orderflow?tf=${tf}`);         // même unité de temps que les bougies
+    // emplacements vides après la dernière bougie (dans les DEUX graphiques, pour rester synchronisés) :
+    // les dernières bougies s'arrêtent avant les étiquettes des niveaux, à droite
+    const step = tf === 1 ? 60 : 300, bs = chart.timeScale().options().barSpacing || 6;
+    const nWs = Math.max(8, Math.ceil(110 / bs));
+    const last = Math.max(bars.length ? bars[bars.length - 1].time : 0, ofd.length ? ofd[ofd.length - 1].time : 0);
+    const ws = last ? Array.from({ length: nWs }, (_, k) => ({ time: last + step * (k + 1) })) : [];
+    candles.setData([...bars, ...ws]);
     if (!framed && bars.length) {                       // cadrage initial : les dernières bougies
       const n = bars.length, show = tf === 1 ? 150 : 72;
-      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - show), to: n + 4 }); framed = true;
+      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - show), to: n + nWs }); framed = true;
     }
-    const ofd = await getJSON(`/api/orderflow?tf=${tf}`);         // même unité de temps que les bougies
-    deltaS.setData(ofd.map((x) => ({ time: x.time, value: x.delta, color: x.delta >= 0 ? "rgba(0,255,163,0.6)" : "rgba(255,59,107,0.6)" })));
-    cvdS.setData(ofd.filter((x) => x.cvd !== null).map((x) => ({ time: x.time, value: x.cvd })));
+    deltaS.setData([...ofd.map((x) => ({ time: x.time, value: x.delta, color: x.delta >= 0 ? "rgba(0,255,163,0.6)" : "rgba(255,59,107,0.6)" })), ...ws]);
+    cvdS.setData([...ofd.filter((x) => x.cvd !== null).map((x) => ({ time: x.time, value: x.cvd })), ...ws]);
     drawOverlay();
   } catch (e) { /* le prochain tour réessaie */ }
 }

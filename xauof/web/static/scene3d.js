@@ -8,7 +8,6 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 const W = 64, D = 40, H = 11;                       // largeur (temps), profondeur (prix), hauteur (activité)
-const SESSION_BUCKETS = 62;                          // 08:20 → 13:30 en tranches de 5 min
 const COL = { cyan: 0x00e5ff, magenta: 0xff2bd6, gold: 0xffcf33, green: 0x00ffa3, red: 0xff3b6b, grey: 0x8b9bb4 };
 
 const box = document.getElementById("scene3d");
@@ -70,7 +69,7 @@ function build(d) {
   dispose(world); scene.remove(world); world = new THREE.Group(); scene.add(world);
   labels.forEach((l) => l.el.remove()); labels = [];
   const g = d.grille, nT = g.length, nP = g[0].length;
-  const span = Math.max(SESSION_BUCKETS, Math.ceil(d.maintenant) + 1, nT);
+  const span = Math.max(Math.ceil(d.maintenant) + 1, nT) + 3;      // la partie jouée remplit la largeur, sans « futur » vide
   const X = (t) => (t / span) * W - W / 2;
   const Z = (p) => D / 2 - ((p - d.prix_bas) / (d.pas_prix * (nP - 1))) * D;      // prix haut = au fond
   const pMax = d.prix_bas + d.pas_prix * (nP - 1);
@@ -120,7 +119,7 @@ function build(d) {
   if (vah && val && val.prix < pMax && vah.prix > d.prix_bas) {    // value area d'hier : plan doré
     const z1 = clampZ(vah.prix), z2 = clampZ(val.prix);
     const pg = new THREE.PlaneGeometry(W, Math.abs(z2 - z1));
-    pg.rotateX(-Math.PI / 2); pg.translate(0, 0.03, (z1 + z2) / 2);
+    pg.rotateX(-Math.PI / 2); pg.translate(0, 0.03, (z1 + z2) / 2);      // limité à la séance (span)
     world.add(new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.07, depthWrite: false })));
   }
   let lastZ = null, stack = 0;
@@ -131,7 +130,7 @@ function build(d) {
     world.add(line([new THREE.Vector3(-W / 2, y, z), new THREE.Vector3(W / 2, y, z)], color, l.type === "LVN" ? 0.6 : 1));
     stack = lastZ !== null && Math.abs(z - lastZ) < 1.6 ? stack + 1 : 0;     // étiquettes empilées si niveaux proches
     lastZ = z;
-    label(`${l.nom} ${l.prix.toFixed(2)}`, new THREE.Vector3(X(d.maintenant) + 7, y + stack * 1.6, z),
+    label(`${l.nom} ${l.prix.toFixed(2)}`, new THREE.Vector3(W / 2 + 1, y + stack * 1.6, z),
       `#${color.toString(16).padStart(6, "0")}`);
   }
 
