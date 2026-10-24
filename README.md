@@ -106,6 +106,14 @@ python -m xauof.strategy.big_trades_study   # exploration : les bulles GC (gros 
   ce qu'il aurait donné sur l'historique.
 - Écoute uniquement sur `127.0.0.1` (ton PC).
 
+### Répondre au bot depuis Telegram
+
+Quand l'interface tourne, le bot écoute **ton** chat (TELEGRAM_CHAT_ID, tout autre est ignoré) :
+boutons « ✅ Je le prends / ❌ Je passe » sous chaque alerte (enregistrés dans
+`data/journal/alertes_decisions.json`, réponds à l'alerte pour ajouter une note) et commandes
+`/etat`, `/setups`, `/niveaux`, `/semaine`, `/pause`, `/reprendre`, `/aide`. Gratuit, aucun port
+ouvert ; aucune commande ne passe d'ordre.
+
 ### Sur le téléphone (Tailscale)
 
 1. Installer Tailscale sur le PC et sur le téléphone (tailscale.com, gratuit), se connecter

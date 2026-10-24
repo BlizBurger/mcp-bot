@@ -132,9 +132,15 @@ def plan_text(plan: Optional[dict]) -> str:
 
 @dataclass
 class AlertCenter:
-    """Alertes dédupliquées (une par zone et par étape), envoyées à Telegram si configuré."""
+    """Alertes dédupliquées (une par zone et par étape), envoyées à Telegram si configuré,
+    avec les boutons « je le prends / je passe ». /pause les coupe sur Telegram jusqu'au lendemain."""
     sent: set = field(default_factory=set)
     feed: list = field(default_factory=list)
+    messages: dict = field(default_factory=dict)        # id du message Telegram → alerte
+    paused_until: Optional[pd.Timestamp] = None
+
+    def paused(self, t: pd.Timestamp) -> bool:
+        return self.paused_until is not None and t < self.paused_until
 
     def push(self, key: str, t: pd.Timestamp, text: str, level: str = "info") -> bool:
         if key in self.sent:
@@ -142,10 +148,14 @@ class AlertCenter:
         self.sent.add(key)
         self.feed.insert(0, {"t": t.isoformat(), "texte": text, "niveau": level})
         del self.feed[50:]
-        send_telegram(text)
+        if not self.paused(t):
+            mid = send_telegram(text, buttons=[[("✅ Je le prends", f"take|{key}"), ("❌ Je passe", f"skip|{key}")]])
+            if mid:
+                self.messages[mid] = {"cle": key, "texte": text, "t": t.isoformat()}
         return True
 
-    def from_setups(self, setups: list[dict], t: pd.Timestamp, blackout: Optional[str]) -> None:
+    def from_setups(self, setups: list[dict], t: pd.Timestamp, blackout: Optional[str],
+                    warning: Optional[str] = None) -> None:
         for s in setups:
             z = s["zone"]
             sens = "ACHAT" if z.direction > 0 else "VENTE"
@@ -154,14 +164,16 @@ class AlertCenter:
             if blackout:
                 base += f" ⚠ fenêtre news : {blackout}"
             base += plan_text(s.get("plan"))
+            if warning:                                   # limite atteinte : l'alerte part quand même, pour info
+                base += f"\n⛔ {warning} — pour info seulement, pas de nouveau trade."
             if s["etat"] == "en attente du prix":
                 self.push(f"{z.id}:pret", t, f"Setup A+ en préparation : {base}", "info")
             else:
                 self.push(f"{z.id}:contact", t, f"Setup A+ : prix dans la zone. {base}", "alerte")
 
 
-def send_telegram(text: str) -> bool:
-    """Envoi Telegram si TELEGRAM_BOT_TOKEN et TELEGRAM_CHAT_ID sont dans .env (sinon rien)."""
+def telegram_credentials() -> tuple[Optional[str], Optional[str]]:
+    """(jeton, chat id) depuis .env, ou (None, None) si absents ou désactivés (tests, démo)."""
     from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env")
@@ -169,12 +181,24 @@ def send_telegram(text: str) -> bool:
 
     token, chat = os.getenv("TELEGRAM_BOT_TOKEN"), clean_chat_id(os.getenv("TELEGRAM_CHAT_ID"))
     if not token or not chat or os.getenv("XAUOF_NO_TELEGRAM"):
-        return False
+        return None, None
+    return token.strip(), chat
+
+
+def send_telegram(text: str, buttons: Optional[list] = None, reply_to: Optional[int] = None) -> Optional[int]:
+    """Envoie un message (boutons : lignes de (libellé, donnée)). Renvoie son id, ou None."""
+    token, chat = telegram_credentials()
+    if not token:
+        return None
+    body = {"chat_id": chat, "text": f"🟡 XAUUSD OF\n{text}"}
+    if buttons:
+        body["reply_markup"] = {"inline_keyboard": [[{"text": a, "callback_data": b} for a, b in row] for row in buttons]}
+    if reply_to:
+        body["reply_to_message_id"] = reply_to
     try:
         import requests
 
-        r = requests.post(f"https://api.telegram.org/bot{token.strip()}/sendMessage",
-                          json={"chat_id": chat, "text": f"🟡 XAUUSD OF\n{text}"}, timeout=10)
-        return r.ok
+        r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=body, timeout=10)
+        return r.json()["result"]["message_id"] if r.ok else None
     except Exception:
-        return False
+        return None

@@ -206,7 +206,7 @@ footer { padding: 10px 24px 18px; color: var(--muted); font-size: 11px; }
 /* ma semaine */
 .week-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .week-dots { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
-.week-dots .dot3 { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 600 11px "JetBrains Mono";
+.week-dots .dot3 { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font: 600 11px "JetBrains Mono";
   border: 2px solid rgba(0, 229, 255, .25); color: var(--muted); }
 .week-dots .dot3.win { border-color: var(--green); color: var(--green); box-shadow: 0 0 14px rgba(0, 255, 163, .45); }
 .week-dots .dot3.loss { border-color: var(--red); color: var(--red); box-shadow: 0 0 14px rgba(255, 59, 107, .4); }
@@ -221,3 +221,4 @@ footer { padding: 10px 24px 18px; color: var(--muted); font-size: 11px; }
 .scene-tip { position: absolute; z-index: 3; pointer-events: none; max-width: 340px; padding: 10px 12px; font-size: 12px; line-height: 1.5;
   background: rgba(4, 6, 12, .92); border: 1px solid var(--cyan); border-radius: 10px; box-shadow: var(--glow); }
 .scene-tip .up, .scene-tip .down { text-shadow: none; }
+.week-dots .dot3.slot { border-color: rgba(0, 229, 255, .12); }

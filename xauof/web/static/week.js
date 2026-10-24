@@ -1,7 +1,7 @@
 /* « Ma semaine » : progression vers l'objectif de 2 bons trades (depuis le journal) et checklist
    avant d'entrer (cochée dans ce navigateur, remise à zéro chaque jour). */
 (() => {
-  const GOAL = 2;
+  const PER_DAY = 2, PER_WEEK = 10;                 // règle d'Alex : 2 trades max par jour
   const ITEMS = [
     "Niveaux d'hier à jour (assistant.update lancé ce matin)",
     "Alerte A+ reçue, ou plan écrit avant d'entrer (entrée, SL, TP)",
@@ -43,15 +43,19 @@
     document.getElementById("week-sum").innerHTML = trades.length
       ? `<span class="${pnl >= 0 ? "up" : "down"}">${sign(pnl, 2)} $</span> · ${sign(r, 2)} R · ${trades.length} trade${trades.length > 1 ? "s" : ""}`
       : "aucun trade cette semaine";
-    const dots = trades.map((t, i) => `<div class="dot3 ${t.pnl >= 0 ? "win" : "loss"} ${i >= GOAL ? "extra" : ""}"
-      title="${t.setup || ""}">${t.r !== null && t.r !== undefined ? sign(t.r, 1) : sign(t.pnl, 0)}</div>`);
-    for (let i = trades.length; i < GOAL; i++) dots.push(`<div class="dot3 goal">?</div>`);
+    const perDay = {};
+    const dots = trades.map((t) => {
+      const d = ny(new Date(t.ouverture)).toDateString(), k = (perDay[d] = (perDay[d] || 0) + 1);
+      return `<div class="dot3 ${t.pnl >= 0 ? "win" : "loss"} ${k > PER_DAY ? "extra" : ""}"
+        title="${t.setup || ""}">${t.r !== null && t.r !== undefined ? sign(t.r, 1) : sign(t.pnl, 0)}</div>`;
+    });
+    for (let i = trades.length; i < PER_WEEK; i++) dots.push(`<div class="dot3 slot"></div>`);
     document.getElementById("week-dots").innerHTML = dots.join("");
     discipline(trades);
-    document.getElementById("week-note").textContent =
-      trades.length < GOAL ? `Encore ${GOAL - trades.length} bon${GOAL - trades.length > 1 ? "s" : ""} setup${GOAL - trades.length > 1 ? "s" : ""} à attendre cette semaine. Patience.`
-        : trades.length === GOAL ? "Objectif atteint : tu peux t'arrêter pour la semaine."
-          : `${trades.length - GOAL} trade${trades.length - GOAL > 1 ? "s" : ""} au-delà de l'objectif (pointillés) : sont-ils vraiment des bons setups ?`;
+    const todayN = perDay[ny(new Date()).toDateString()] || 0;
+    document.getElementById("week-note").textContent = `Aujourd'hui : ${todayN} / ${PER_DAY} trades. `
+      + (todayN >= PER_DAY ? "Limite du jour atteinte : les alertes continuent pour info, mais plus de trade aujourd'hui."
+        : `Semaine : ${trades.length} / ${PER_WEEK} max. Seulement les bons setups.`);
   }
 
   function discipline(trades) {

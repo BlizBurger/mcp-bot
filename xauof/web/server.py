@@ -28,7 +28,8 @@ from xauof.news.calendar import Calendar, load_calendar
 from xauof.web import journal as jr
 from xauof.web.orderflow_proxy import proxy_bars, tick_signs
 from xauof.strategy.instrument import load_instrument
-from xauof.web.setups import AlertCenter, qualify, trade_plan
+from xauof.web.setups import AlertCenter, qualify, telegram_credentials, trade_plan
+from xauof.web.tg_bot import TelegramBot
 
 STATIC = Path(__file__).parent / "static"
 NY = "America/New_York"
@@ -121,9 +122,11 @@ class Hub:
         for st in setups:
             st["plan"] = trade_plan(st["zone"], levels, atr, spread, self.inst, budget)
         t_start = ny_time(day, cfg["strategy"]["entry_start"], NY)
-        stopped = bool(snap["compte"] and snap["compte"]["stop_interne_atteint"])
-        if t_start <= now <= ny_time(day, cfg["strategy"]["entry_end"], NY) and not stopped:   # ni hors fenêtre, ni après un STOP
-            self.alerts.from_setups(setups, now, snap["news_blackout"])
+        stop = snap["compte"]["stop_raisons"] if snap["compte"] and snap["compte"]["stop_interne_atteint"] else []
+        if t_start <= now <= ny_time(day, cfg["strategy"]["entry_end"], NY):     # pas d'alerte hors fenêtre d'entrée
+            # limite atteinte : les alertes continuent (choix d'Alex), marquées « pour info »
+            self.alerts.from_setups(setups, now, snap["news_blackout"],
+                                    "limite atteinte : " + ", ".join(stop) if stop else None)
 
         of_from = t_start if now > t_start else now - pd.Timedelta(hours=1)   # CVD depuis l'ouverture de séance
         of = proxy_bars(src.ticks(of_from, now), cvd_from=t_start)
@@ -204,9 +207,16 @@ def create_app(cfg: dict, source, alert_loop: bool = True, password: str | None 
                         pass
                     await asyncio.sleep(20)
             task = asyncio.create_task(loop())
+        bot = None
+        token, chat = telegram_credentials()
+        if alert_loop and token:                      # répondre au bot depuis Telegram (boutons, commandes)
+            bot = TelegramBot(cfg, hub, token, chat)
+            bot.start()
         yield
         if task:
             task.cancel()
+        if bot:
+            bot.stop()
 
     app = FastAPI(title="XAUUSD OF", lifespan=lifespan)
     app.state.hub = hub
