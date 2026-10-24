@@ -83,6 +83,7 @@ function drawOverlay() {
     ctx.fillStyle = bull ? C.green : C.red; ctx.font = "10px JetBrains Mono";
     ctx.fillText(`${z.type} ${bull ? "▲" : "▼"}`, x0 + 4, y1 - 3);
   }
+  drawLevelNames(ctx, y);
   drawProfiles();
 }
 
@@ -136,7 +137,25 @@ function setLevelLines() {
     else if (l.nom === "VAH vol" || l.nom === "VAL vol") opt = { color: C.gold, lineWidth: 1, lineStyle: LW.LineStyle.Dashed };
     else if (l.type === "POC" || l.type === "VAH" || l.type === "VAL") opt = { color: C.cyan, lineWidth: 1, lineStyle: LW.LineStyle.Dotted };
     else if (l.type === "LVN") opt = { color: C.grey, lineWidth: 1, lineStyle: LW.LineStyle.SparseDotted };
-    if (opt) priceLines.push(candles.createPriceLine({ price: l.prix, axisLabelVisible: true, title: l.nom, ...opt }));
+    // pas de titre dans la zone des bougies (il cachait les dernières) : le nom est écrit à gauche par l'overlay
+    if (opt) priceLines.push(candles.createPriceLine({ price: l.prix, axisLabelVisible: true, title: "", ...opt }));
+  }
+}
+const LEVEL_COLORS = (l) => l.nom === "POC vol" || l.nom === "VAH vol" || l.nom === "VAL vol" ? C.gold
+  : ["POC", "VAH", "VAL"].includes(l.type) ? C.cyan : l.type === "LVN" ? C.grey : null;
+function drawLevelNames(ctx, y) {
+  // noms des niveaux à GAUCHE du graphique ; côte à côte quand plusieurs niveaux sont proches
+  const items = (state.niveaux || []).map((l) => ({ l, c: LEVEL_COLORS(l), yy: y(l.prix) }))
+    .filter((x) => x.c && x.yy !== null).sort((a, b) => a.yy - b.yy);
+  ctx.font = "10px JetBrains Mono";
+  let lastY = -99, x = 6;
+  for (const { l, c, yy } of items) {
+    x = Math.abs(yy - lastY) < 12 ? x : 6;
+    const txt = l.nom, w = ctx.measureText(txt).width + 8;
+    ctx.fillStyle = "rgba(4,6,12,0.78)"; ctx.fillRect(x, yy - 12, w, 12);
+    ctx.fillStyle = c; ctx.fillText(txt, x + 4, yy - 3);
+    if (Math.abs(yy - lastY) >= 12) lastY = yy;
+    x += w + 4;
   }
 }
 
