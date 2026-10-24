@@ -117,7 +117,9 @@ class DemoSource:
         tp = tpo.tpo_profile(trades, p["bin_size"], 30, 60, p["value_area_pct"])
         return {"source_day": f"{prev_day:%Y-%m-%d}", "contract": 0, "basis": 0.0, "poc_v": vol.poc,
                 "vah_v": vol.vah, "val_v": vol.val, "poc_t": tp.poc, "vah_t": tp.vah, "val_t": tp.val,
-                "hvn": hz, "lvn": vol.lvn, "singles": tp.single_prints}
+                "hvn": hz, "lvn": vol.lvn, "singles": tp.single_prints,
+                "profil_volume": [(float(k), float(v)) for k, v in vol.profile.items()],
+                "profil_tpo": [(float(k), int(v)) for k, v in tp.counts.items()]}
 
     def now(self) -> pd.Timestamp:
         return (self.t0_sim + pd.Timedelta(seconds=(time.time() - self.t0_real) * self.speed)).floor("s")

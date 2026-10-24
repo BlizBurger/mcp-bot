@@ -54,9 +54,14 @@
       <div class="panel chart-panel">
         <div class="panel-head">
           <h2>XAUUSD <span class="muted" id="window">—</span></h2>
-          <div class="tf"><button class="tf-btn active" data-tf="1">M1</button><button class="tf-btn" data-tf="5">M5</button></div>
+          <div class="tf-group">
+            <div class="tf prof" title="Profils volume et TPO sur le côté droit du graphique">
+              <button class="prof-btn" data-prof="hier">Profil d'hier</button><button class="prof-btn" data-prof="jour">Profil du jour</button><button class="prof-btn" data-prof="off">✕</button>
+            </div>
+            <div class="tf"><button class="tf-btn active" data-tf="1">M1</button><button class="tf-btn" data-tf="5">M5</button></div>
+          </div>
         </div>
-        <div class="chart-wrap"><div id="chart"></div><canvas id="overlay"></canvas></div>
+        <div class="chart-row"><div class="chart-wrap"><div id="chart"></div><canvas id="overlay"></canvas></div><canvas id="profside"></canvas></div>
         <div class="legend">
           <span><i class="sw gold"></i>Profil volume d'hier</span>
           <span><i class="sw cyan"></i>Profil temps (TPO)</span>
@@ -68,7 +73,7 @@
         </div>
         <div class="panel-head of-head"><h3>ORDER FLOW <span class="tag">estimation ticks</span></h3>
           <span class="muted small">barres = pression par bougie · ligne = cumul depuis 08:20</span></div>
-        <div id="ofchart"></div>
+        <div class="chart-row"><div id="ofchart"></div><div class="prof-spacer"></div></div>
       </div>
       <div class="panel live3d-panel">
         <div class="panel-head"><h2>ORDER FLOW <span class="accent">3D</span> · DISCIPLINE <span class="muted small">estimation ticks · 90 dernières minutes</span></h2>

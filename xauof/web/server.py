@@ -12,6 +12,7 @@ import hmac
 import threading
 import time
 from contextlib import asynccontextmanager
+from typing import Optional
 from pathlib import Path
 
 import numpy as np
@@ -57,6 +58,49 @@ def demo_calendar(now: pd.Timestamp) -> Calendar:
     ev = pd.DataFrame({"currency": ["USD"], "impact": ["High"], "kind": ["OTHER"], "event": ["Démo : annonce fictive"]},
                       index=pd.DatetimeIndex([t], name="time_utc"))
     return Calendar(ev, [(now - pd.Timedelta(days=2), now + pd.Timedelta(days=2))])
+
+
+def _va(points: list) -> Optional[dict]:
+    """Value area (70 %) et POC d'un profil [(prix, valeur)]."""
+    from xauof.indicators.volume_profile import value_area
+
+    if not points:
+        return None
+    prof = pd.Series([v for _, v in points], index=[round(p, 2) for p, _ in points]).groupby(level=0).sum()
+    full = np.round(np.arange(prof.index.min(), prof.index.max() + 0.25, 0.5), 2)      # niveaux sans activité = 0
+    poc, val, vah = value_area(prof.reindex(full, fill_value=0), 0.70)
+    return {"poc": poc, "val": val, "vah": vah}
+
+
+def profile_yesterday(levels: Optional[dict]) -> Optional[dict]:
+    """Profils volume (vrai volume GC) et TPO de la séance d'hier, en prix XAUUSD."""
+    if not levels or not levels.get("profil_volume"):
+        return None
+    return {"source": "GC d'hier (vrai volume)", "volume": levels["profil_volume"], "tpo": levels["profil_tpo"],
+            "va_volume": {"poc": levels["poc_v"], "val": levels["val_v"], "vah": levels["vah_v"]},
+            "va_tpo": {"poc": levels["poc_t"], "val": levels["val_t"], "vah": levels["vah_t"]}}
+
+
+def profile_today(ticks: pd.DataFrame, xau: pd.DataFrame, t_start: pd.Timestamp, now: pd.Timestamp, cfg: dict,
+                  bin_size: float = 0.5) -> Optional[dict]:
+    """Profil du jour depuis 08:20 : activité (ticks MT5, estimation du volume) et TPO (bougies M1)."""
+    if now <= t_start or ticks.empty:
+        return None
+    t = ticks[ticks.index >= t_start]
+    bars = xau[(xau.index >= t_start) & (xau.index + pd.Timedelta(minutes=1) <= now)]
+    if t.empty or bars.empty:
+        return None
+    mid = ((t["bid"] + t["ask"]) / 2 / bin_size).round() * bin_size
+    vol = mid.value_counts().sort_index()
+    period = f"{cfg['sessions']['tpo_period_min']}min"
+    counts: dict = {}
+    for _, b in bars[["high", "low"]].resample(period).agg({"high": "max", "low": "min"}).dropna().iterrows():
+        for k in np.arange(round(b["low"] / bin_size), round(b["high"] / bin_size) + 1):
+            counts[round(k * bin_size, 2)] = counts.get(round(k * bin_size, 2), 0) + 1
+    volume = [(float(p), float(v)) for p, v in vol.items()]
+    tpo_pts = sorted(counts.items())
+    return {"source": "aujourd'hui (ticks MT5, estimation)", "volume": volume, "tpo": tpo_pts,
+            "va_volume": _va(volume), "va_tpo": _va(tpo_pts)}
 
 
 class Hub:
@@ -129,7 +173,8 @@ class Hub:
                                     "limite atteinte : " + ", ".join(stop) if stop else None)
 
         of_from = t_start if now > t_start else now - pd.Timedelta(hours=1)   # CVD depuis l'ouverture de séance
-        of = proxy_bars(src.ticks(of_from, now), cvd_from=t_start)
+        ticks = src.ticks(of_from, now)
+        of = proxy_bars(ticks, cvd_from=t_start)
         last5 = of[of.index >= now - pd.Timedelta(minutes=5)]
         of_sum = {"delta_5min": float(last5["delta"].sum()) if len(last5) else 0.0,
                   "cvd": float(of["cvd"].dropna().iloc[-1]) if of["cvd"].notna().any() else None,
@@ -157,6 +202,7 @@ class Hub:
         upcoming = [{"heure": t.tz_convert(NY).strftime("%a %d %H:%M"), "dans_min": int((t - now).total_seconds() // 60),
                      "annonce": e} for t, e in zip(news.index, news["event"])]
         ib = snap["ib"]
+        profils = {"hier": profile_yesterday(levels), "jour": profile_today(ticks, xau, t_start, now, cfg)}
         return {
             "source": src.name, "maintenant": now.isoformat(), "heure_ny": snap["heure_ny"],
             "heure_paris": now.tz_convert("Europe/Paris").strftime("%H:%M"),
@@ -172,7 +218,7 @@ class Hub:
             "news_cloture": snap["news_cloture"], "compte": snap["compte"],
             "limites": {"arret_interne": cfg["risk"]["daily_stop_usd"], "ftmo_jour": cfg["ftmo"]["daily_loss_limit_usd"],
                         "semaine": cfg["risk"]["weekly_stop_usd"], "trades_jour": cfg["risk"]["max_entries_per_day"]},
-            "alertes_systeme": snap["alertes"], "alertes": self.alerts.feed[:20], "atr_m5": atr,
+            "alertes_systeme": snap["alertes"], "alertes": self.alerts.feed[:20], "atr_m5": atr, "profils": profils,
         }
 
 

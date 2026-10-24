@@ -39,6 +39,9 @@ def test_state_payload(client):
         assert st["niveaux"] and st["contexte"]
     assert len(s["alertes"]) == len(s["setups"])             # une alerte « en préparation » par setup
     assert s["spread_bloque"] is None                        # 60 minutes complètes d'historique
+    hier, jour = s["profils"]["hier"], s["profils"]["jour"]
+    assert hier["volume"] and hier["tpo"] and hier["va_volume"]["val"] < hier["va_volume"]["vah"]
+    assert jour["volume"] and jour["tpo"] and jour["va_volume"]["val"] <= jour["va_volume"]["poc"] <= jour["va_volume"]["vah"]
 
 
 def test_bars_and_orderflow_aligned(client):

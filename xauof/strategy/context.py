@@ -38,6 +38,8 @@ class SessionLevels:
     hvn: list[tuple[float, float]] = field(default_factory=list)
     lvn: list[float] = field(default_factory=list)
     singles: list[tuple[float, float]] = field(default_factory=list)
+    profil_volume: list[tuple[float, float]] = field(default_factory=list)   # (prix XAUUSD, volume GC) pour l'affichage
+    profil_tpo: list[tuple[float, int]] = field(default_factory=list)        # (prix XAUUSD, nb de périodes de 30 min)
 
     def value_area(self, source: str) -> tuple[float, float, float]:
         """(VAL, POC, VAH) selon la source choisie pour les scénarios."""
@@ -77,6 +79,8 @@ def build_session_levels(cfg: dict, rth_trades: pd.DataFrame, gc_m1: pd.DataFram
         poc_t=x_(tp.poc), vah_t=x_(tp.vah), val_t=x_(tp.val),
         hvn=[(x_(a), x_(c)) for a, c in hz], lvn=[x_(v) for v in vol.lvn],
         singles=[(x_(a), x_(c)) for a, c in tp.single_prints],
+        profil_volume=[(round(x_(k), 2), float(v)) for k, v in vol.profile.items()],
+        profil_tpo=[(round(x_(k), 2), int(v)) for k, v in tp.counts.items()],
     ), ""
 
 

@@ -83,7 +83,49 @@ function drawOverlay() {
     ctx.fillStyle = bull ? C.green : C.red; ctx.font = "10px JetBrains Mono";
     ctx.fillText(`${z.type} ${bull ? "▲" : "▼"}`, x0 + 4, y1 - 3);
   }
+  drawProfiles();
 }
+
+/* profils volume + TPO sur le côté droit (hier : vrai volume GC ; jour : ticks MT5) */
+let profMode = (() => { try { return localStorage.getItem("xauof-prof") || "hier"; } catch (e) { return "hier"; } })();
+function drawProfiles() {
+  // colonne à droite de l'échelle des prix : mêmes coordonnées verticales que le graphique
+  const cv = $("profside"), panel = document.querySelector(".chart-panel");
+  const pr = profMode !== "off" && state && state.profils ? state.profils[profMode] : null;
+  panel.classList.toggle("no-prof", profMode === "off");
+  if (profMode === "off") return;
+  const w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#8fa3c0"; ctx.font = "10px JetBrains Mono";
+  if (!pr) { ctx.fillText(profMode === "hier" ? "profil d'hier absent" : "pas encore de séance", 8, 14); return; }
+  const y = (p) => candles.priceToCoordinate(p), gap = 8, colW = (w - gap - 12) / 2, x1 = 6, x2 = x1 + colW + gap;
+  const col = (pts, va, x0, inC, pocC, label) => {
+    ctx.fillStyle = "#8fa3c0"; ctx.fillText(label, x0, 12);
+    if (!pts || !pts.length) return;
+    const vmax = Math.max(...pts.map((p) => p[1]));
+    for (const [p, v] of pts) {
+      const ya = y(p + 0.25), yb = y(p - 0.25);
+      if (ya === null || yb === null || yb < 18 || ya > h) continue;
+      const inside = va && p >= va.val && p <= va.vah;
+      ctx.fillStyle = va && Math.abs(p - va.poc) < 0.26 ? pocC : inside ? inC : "rgba(120,130,150,0.45)";
+      ctx.fillRect(x0, ya, Math.max(1, (v / vmax) * colW), Math.max(1, yb - ya - 0.5));
+    }
+  };
+  col(pr.volume, pr.va_volume, x1, "rgba(240,180,41,0.85)", "#ffcf33", profMode === "hier" ? "VOLUME" : "ACTIVITÉ");
+  col(pr.tpo, pr.va_tpo, x2, "rgba(88,166,255,0.85)", "#9ccaff", "TPO");
+  const py = state.prix ? y(state.prix.bid) : null;          // prix actuel en repère
+  if (py !== null) { ctx.strokeStyle = "rgba(255,43,214,0.8)"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(w, py); ctx.stroke(); ctx.setLineDash([]); }
+}
+document.querySelectorAll(".prof-btn").forEach((b) => {
+  b.classList.toggle("active", b.dataset.prof === profMode);
+  b.onclick = () => {
+    profMode = b.dataset.prof;
+    try { localStorage.setItem("xauof-prof", profMode); } catch (e) { /* stockage indisponible */ }
+    document.querySelectorAll(".prof-btn").forEach((x) => x.classList.toggle("active", x === b));
+    drawOverlay();
+  };
+});
 new ResizeObserver(drawOverlay).observe($("chart"));
 
 function setLevelLines() {
