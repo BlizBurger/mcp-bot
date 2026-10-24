@@ -50,10 +50,10 @@ scene.add(world);
 function dispose(obj) {
   obj.traverse((o) => { o.geometry?.dispose(); (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m?.dispose()); });
 }
-function label(text, pos, color) {
+function label(text, pos, color, level = false) {
   const el = document.createElement("div");
   el.className = "scene-label"; el.textContent = text; el.style.color = color;
-  box.appendChild(el); labels.push({ el, pos });
+  box.appendChild(el); labels.push({ el, pos, level, hiddenBy: false });
 }
 function line(points, color, opacity = 1) {
   const g = new THREE.BufferGeometry().setFromPoints(points);
@@ -122,16 +122,13 @@ function build(d) {
     pg.rotateX(-Math.PI / 2); pg.translate(0, 0.03, (z1 + z2) / 2);      // limité à la séance (span)
     world.add(new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.07, depthWrite: false })));
   }
-  let lastZ = null, stack = 0;
   for (const l of [...d.niveaux].sort((a, b) => b.prix - a.prix)) {
     if (l.type === "HVN" || l.type === "SP" || !inRange(l.prix)) continue;
     const color = l.nom.includes("TPO") ? COL.cyan : l.type === "LVN" ? COL.grey : COL.gold;
     const z = clampZ(l.prix), y = l.type === "POC" ? 0.15 : 0.08;
     world.add(line([new THREE.Vector3(-W / 2, y, z), new THREE.Vector3(W / 2, y, z)], color, l.type === "LVN" ? 0.6 : 1));
-    stack = lastZ !== null && Math.abs(z - lastZ) < 1.6 ? stack + 1 : 0;     // étiquettes empilées si niveaux proches
-    lastZ = z;
-    label(`${l.nom} ${l.prix.toFixed(2)}`, new THREE.Vector3(W / 2 + 1, y + stack * 1.6, z),
-      `#${color.toString(16).padStart(6, "0")}`);
+    label(`${l.nom} ${l.prix.toFixed(2)}`, new THREE.Vector3(W / 2 + 0.6, y, z),
+      `#${color.toString(16).padStart(6, "0")}`, true);
   }
 
   // IB : cage cyan
@@ -259,13 +256,37 @@ function resize() {
 new ResizeObserver(resize).observe(box);
 
 const v = new THREE.Vector3();
+let frame = 0;
+const camPos = new THREE.Vector3(), dir = new THREE.Vector3(), occl = new THREE.Raycaster();
 function placeLabels() {
-  const w = box.clientWidth, h = box.clientHeight;
-  for (const { el, pos } of labels) {
-    v.copy(pos).project(camera);
-    const hidden = v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05;
+  const w = box.clientWidth, h = box.clientHeight, placed = [];
+  frame++;
+  if (frame % 10 === 0 && hover) {                  // relief devant l'étiquette ? → transparente
+    camera.getWorldPosition(camPos);
+    for (const L of labels) {
+      dir.copy(L.pos).sub(camPos); const dist = dir.length(); dir.normalize();
+      occl.set(camPos, dir); occl.far = dist - 0.6;
+      L.hiddenBy = occl.intersectObject(hover.surface).length > 0;
+    }
+  }
+  // étiquettes des niveaux d'abord (de haut en bas à l'écran), décalées à l'écran si elles se chevauchent
+  const proj = labels.map((L) => { v.copy(L.pos).project(camera); return { L, x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, z: v.z }; });
+  proj.sort((a, b) => (b.L.level - a.L.level) || (a.y - b.y));
+  for (const p of proj) {
+    const { el } = p.L;
+    const hidden = p.z > 1 || p.x < -40 || p.x > w + 40 || p.y < -20 || p.y > h + 20;
     el.style.display = hidden ? "none" : "block";
-    el.style.left = `${(v.x * 0.5 + 0.5) * w}px`; el.style.top = `${(-v.y * 0.5 + 0.5) * h}px`;
+    if (hidden) continue;
+    const ew = el.offsetWidth || 80, eh = (el.offsetHeight || 16) + 2;
+    let y = p.y;
+    for (let k = 0; k < 6; k++) {
+      const hit = placed.find((q) => Math.abs(q.x - p.x) < (q.w + ew) / 2 && Math.abs(q.y - y) < eh);
+      if (!hit) break;
+      y = hit.y + eh;                                  // juste en dessous de celle qui gêne
+    }
+    placed.push({ x: p.x, y, w: ew });
+    el.style.left = `${p.x}px`; el.style.top = `${y}px`;
+    el.style.opacity = p.L.hiddenBy ? "0.25" : "1";
   }
 }
 
