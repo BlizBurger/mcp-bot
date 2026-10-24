@@ -123,13 +123,15 @@ function render(s) {
     const lim = s.limites.arret_interne, loss = Math.max(0, a.perte_jour);
     $("risk-fill").style.width = `${Math.min(100, (loss / s.limites.ftmo_jour) * 100)}%`;
     $("risk-mark").style.left = `${(lim / s.limites.ftmo_jour) * 100}%`;
-    $("risk-text").innerHTML = `résultat du jour <b class="${a.perte_jour <= 0 ? "up" : "down"}">${sign(-a.perte_jour, 2)} $</b> · reste <b>${fmt(a.reste_arret_interne)} $</b> avant ton arrêt (${lim} $) · plancher FTMO à ${fmt(a.marge_plancher_ftmo)} $`;
+    const wk = a.perte_semaine === null || a.perte_semaine === undefined ? ""
+      : ` · semaine <b class="${a.perte_semaine <= 0 ? "up" : "down"}">${sign(-a.perte_semaine, 2)} $</b> (stop à −${s.limites.semaine} $)`;
+    $("risk-text").innerHTML = `résultat du jour <b class="${a.perte_jour <= 0 ? "up" : "down"}">${sign(-a.perte_jour, 2)} $</b> · reste <b>${fmt(a.reste_arret_interne)} $</b> avant ton arrêt (${lim} $)`
+      + ` · trades <b>${a.trades_jour} / ${a.max_trades_jour}</b>${wk}`;
   }
   const msgs = [];
   if (s.news_cloture) msgs.push(`⚠ Clôture avant annonce majeure : ${s.news_cloture}`);
   else if (s.news_blackout) msgs.push(`⚠ Fenêtre news : ${s.news_blackout}`);
-  if (a && a.stop_interne_atteint) msgs.push("⛔ Limite interne atteinte : on arrête pour aujourd'hui");
-  for (const m of s.alertes_systeme || []) if (!m.startsWith("Spread")) msgs.push(m);
+  for (const m of s.alertes_systeme || []) if (!m.startsWith("Spread")) msgs.push(m.startsWith("STOP") ? `⛔ ${m}` : m);
   msgs.length ? banner(msgs.join(" · "), a && a.stop_interne_atteint ? "" : "warn") : $("banner").classList.add("hidden");
 
   $("setups").innerHTML = (s.setups || []).length ? s.setups.map((x) => `

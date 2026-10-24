@@ -121,7 +121,8 @@ class Hub:
         for st in setups:
             st["plan"] = trade_plan(st["zone"], levels, atr, spread, self.inst, budget)
         t_start = ny_time(day, cfg["strategy"]["entry_start"], NY)
-        if t_start <= now <= ny_time(day, cfg["strategy"]["entry_end"], NY):     # pas d'alerte hors fenêtre d'entrée
+        stopped = bool(snap["compte"] and snap["compte"]["stop_interne_atteint"])
+        if t_start <= now <= ny_time(day, cfg["strategy"]["entry_end"], NY) and not stopped:   # ni hors fenêtre, ni après un STOP
             self.alerts.from_setups(setups, now, snap["news_blackout"])
 
         of_from = t_start if now > t_start else now - pd.Timedelta(hours=1)   # CVD depuis l'ouverture de séance
@@ -166,7 +167,8 @@ class Hub:
                         "etat": s["etat"], "plan": s["plan"]} for s in setups],
             "orderflow": of_sum, "news": upcoming, "news_blackout": snap["news_blackout"],
             "news_cloture": snap["news_cloture"], "compte": snap["compte"],
-            "limites": {"arret_interne": cfg["risk"]["daily_stop_usd"], "ftmo_jour": cfg["ftmo"]["daily_loss_limit_usd"]},
+            "limites": {"arret_interne": cfg["risk"]["daily_stop_usd"], "ftmo_jour": cfg["ftmo"]["daily_loss_limit_usd"],
+                        "semaine": cfg["risk"]["weekly_stop_usd"], "trades_jour": cfg["risk"]["max_entries_per_day"]},
             "alertes_systeme": snap["alertes"], "alertes": self.alerts.feed[:20], "atr_m5": atr,
         }
 

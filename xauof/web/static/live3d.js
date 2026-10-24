@@ -137,13 +137,16 @@ function buildReactor(st) {
   if (!a || !lim) { risk = 0; coreColor.set(COL.cyan); text.textContent = "compte indisponible"; return; }
   const loss = a.perte_jour;                         // < 0 = gain
   risk = Math.min(1, Math.max(0, loss / lim.arret_interne));
-  const ftmo = Math.min(1, Math.max(0, loss / lim.ftmo_jour));
+  const ftmo = a.perte_semaine === null || a.perte_semaine === undefined ? 0      // anneau extérieur : limite de la semaine
+    : Math.min(1, Math.max(0, a.perte_semaine / lim.semaine));
   coreColor = loss < 0 ? new THREE.Color(COL.gold) : riskColor(risk);
   if (risk > 0) { ringFill = arc(4.2, 0.22, risk, riskColor(risk)); reactor.add(ringFill); }
   if (ftmo > 0) { ftmoFill = arc(5.4, 0.08, ftmo, COL.red); reactor.add(ftmoFill); }
   const res = -loss;
-  text.textContent = `résultat du jour ${res > 0 ? "+" : ""}${res.toFixed(2)} $ · limite interne utilisée ${Math.round(risk * 100)} %`
-    + (risk >= 1 ? " · STOP pour aujourd'hui" : "");
+  if (a.stop_interne_atteint) { risk = 1; coreColor = new THREE.Color(COL.red); }
+  text.textContent = `résultat du jour ${res > 0 ? "+" : ""}${res.toFixed(2)} $ · limite du jour utilisée ${Math.round(Math.min(1, Math.max(0, loss / lim.arret_interne)) * 100)} %`
+    + ` · semaine ${Math.round(ftmo * 100)} % · trades ${a.trades_jour}/${a.max_trades_jour}`
+    + (a.stop_interne_atteint ? ` · ⛔ STOP : ${a.stop_raisons.join(", ")}` : "");
 }
 
 let active = false, visible = true;

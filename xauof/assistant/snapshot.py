@@ -41,18 +41,33 @@ def zones_today(cfg: dict, xau_m1: pd.DataFrame, session_start: pd.Timestamp, no
     return book.zones
 
 
-def account_status(cfg: dict, balance: float, equity: float, realized_today: float) -> dict:
-    """Limites du jour à partir des chiffres MT5 (réalisé du jour = depuis minuit Europe/Prague)."""
+def account_status(cfg: dict, balance: float, equity: float, realized_today: float,
+                   trades_today: int = 0, realized_week: float | None = None) -> dict:
+    """Limites du jour et de la semaine à partir des chiffres MT5 (jour = depuis minuit Europe/Prague,
+    semaine = depuis lundi minuit ; flottant compris)."""
+    r = cfg["risk"]
     day_start = balance - realized_today
     loss = day_start - equity
     floor = cfg["account"]["initial_capital"] - cfg["ftmo"]["max_loss_usd"]
-    internal_floor = floor + cfg["risk"]["total_floor_margin_usd"]
+    internal_floor = floor + r["total_floor_margin_usd"]
+    week_loss = (balance - realized_week) - equity if realized_week is not None else None
+    reasons = []
+    if loss >= r["daily_stop_usd"]:
+        reasons.append(f"perte du jour ≥ {r['daily_stop_usd']:.0f} $")
+    if equity <= internal_floor:
+        reasons.append("plancher interne atteint")
+    if trades_today >= r["max_entries_per_day"]:
+        reasons.append(f"{trades_today} trades aujourd'hui (max {r['max_entries_per_day']})")
+    if week_loss is not None and week_loss >= r["weekly_stop_usd"]:
+        reasons.append(f"perte de la semaine ≥ {r['weekly_stop_usd']:.0f} $ : stop jusqu'à lundi")
     return {
         "solde": balance, "equity": equity, "solde_debut_jour": day_start, "perte_jour": loss,
-        "reste_arret_interne": cfg["risk"]["daily_stop_usd"] - loss,
+        "reste_arret_interne": r["daily_stop_usd"] - loss,
         "reste_ftmo_jour": cfg["ftmo"]["daily_loss_limit_usd"] - loss,
         "marge_plancher_ftmo": equity - floor, "marge_plancher_interne": equity - internal_floor,
-        "stop_interne_atteint": loss >= cfg["risk"]["daily_stop_usd"] or equity <= internal_floor,
+        "trades_jour": trades_today, "max_trades_jour": r["max_entries_per_day"],
+        "perte_semaine": week_loss, "reste_semaine": None if week_loss is None else r["weekly_stop_usd"] - week_loss,
+        "stop_raisons": reasons, "stop_interne_atteint": bool(reasons),
     }
 
 
@@ -123,7 +138,7 @@ def snapshot(cfg: dict, xau_m1: pd.DataFrame, levels: Optional[dict], calendar: 
     if out["news_cloture"]:
         alerts.append(f"Clôturer avant annonce majeure : {out['news_cloture']}")
     if out["compte"] and out["compte"]["stop_interne_atteint"]:
-        alerts.append("Limite interne atteinte : ne plus trader aujourd'hui")
+        alerts.append("STOP : " + " · ".join(out["compte"]["stop_raisons"]) + " — plus de trade")
     if levels is None:
         alerts.append("Niveaux de la veille absents : lancer python -m xauof.assistant.update")
     out["alertes"] = alerts

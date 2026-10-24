@@ -47,10 +47,27 @@
       title="${t.setup || ""}">${t.r !== null && t.r !== undefined ? sign(t.r, 1) : sign(t.pnl, 0)}</div>`);
     for (let i = trades.length; i < GOAL; i++) dots.push(`<div class="dot3 goal">?</div>`);
     document.getElementById("week-dots").innerHTML = dots.join("");
+    discipline(trades);
     document.getElementById("week-note").textContent =
       trades.length < GOAL ? `Encore ${GOAL - trades.length} bon${GOAL - trades.length > 1 ? "s" : ""} setup${GOAL - trades.length > 1 ? "s" : ""} à attendre cette semaine. Patience.`
         : trades.length === GOAL ? "Objectif atteint : tu peux t'arrêter pour la semaine."
           : `${trades.length - GOAL} trade${trades.length - GOAL > 1 ? "s" : ""} au-delà de l'objectif (pointillés) : sont-ils vraiment des bons setups ?`;
+  }
+
+  function discipline(trades) {
+    // objectifs de discipline, mesurés sur les trades de la semaine (journal MT5)
+    const n = trades.length, days = {};
+    for (const t of trades) { const d = ny(new Date(t.ouverture)).toDateString(); days[d] = (days[d] || 0) + 1; }
+    const nd = Object.keys(days).length;
+    const rows = [
+      ["SL saisi dès l'entrée", trades.filter((t) => t.sl_initial).length, n],
+      ["Risque ≤ 0,5 % (≤ 55 $)", trades.filter((t) => t.risque_usd !== null && t.risque_usd !== undefined && t.risque_usd <= 55).length, n],
+      ["Jours à 2 trades maximum", Object.values(days).filter((k) => k <= 2).length, nd],
+      ["Trades notés dans le journal (setup rempli)", trades.filter((t) => (t.setup || "").trim()).length, n],
+    ];
+    document.getElementById("week-disc").innerHTML = n ? rows.map(([label, ok, tot]) =>
+      `<div class="${ok === tot ? "up" : "down"}">${ok === tot ? "✓" : "✗"} ${label} : ${ok} / ${tot}</div>`).join("")
+      : `<div class="muted">rien à mesurer pour l'instant</div>`;
   }
 
   checklist();

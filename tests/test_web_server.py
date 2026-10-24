@@ -32,7 +32,8 @@ def test_state_payload(client):
     assert s["niveaux"] and all({"nom", "prix", "aide", "distance"} <= set(x) for x in s["niveaux"])
     assert s["ib"]["definitive"] is True
     assert {"delta_5min", "cvd", "ticks_5min"} <= set(s["orderflow"])
-    assert s["compte"]["reste_arret_interne"] == pytest.approx(150 - s["compte"]["perte_jour"])
+    assert s["compte"]["reste_arret_interne"] == pytest.approx(200 - s["compte"]["perte_jour"])
+    assert s["compte"]["trades_jour"] == 1 and s["compte"]["perte_semaine"] == pytest.approx(10040 + 95 - 10012.5)
     for st in s["setups"]:                                   # chaque setup A+ a ses deux critères
         assert st["niveaux"] and st["contexte"]
     assert len(s["alertes"]) == len(s["setups"])             # une alerte « en préparation » par setup

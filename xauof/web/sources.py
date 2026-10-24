@@ -132,7 +132,8 @@ class DemoSource:
         return t[(t.index >= start) & (t.index < min(end, self.now()))]
 
     def account(self, now) -> Optional[dict]:
-        return {"balance": 10040.0, "equity": 10012.5, "realized_today": 40.0}
+        return {"balance": 10040.0, "equity": 10012.5, "realized_today": 40.0, "trades_today": 1,
+                "realized_week": -95.0}
 
     def tick(self) -> Optional[dict]:
         t = self._ticks[self._ticks.index <= self.now()]

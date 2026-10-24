@@ -178,7 +178,7 @@ def test_research_mode_lifts_account_limits_only(market):
     rc = R.research_config(cfg)
     assert rc["risk"]["daily_stop_usd"] > 1e9 and rc["ftmo"]["max_loss_usd"] > 1e9
     assert rc["strategy"] == cfg["strategy"] and rc["costs"] == cfg["costs"]
-    assert cfg["risk"]["daily_stop_usd"] == 150                         # la config d'origine est intacte
+    assert cfg["risk"]["daily_stop_usd"] == 200                         # la config d'origine est intacte
 
 
 def test_trades_report_excursions(market):

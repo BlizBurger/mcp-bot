@@ -79,9 +79,9 @@ def test_account_status(mkt):
     cfg, _ = mkt
     a = sn.account_status(cfg, balance=9950, equity=9900, realized_today=-50)
     assert a["solde_debut_jour"] == 10000 and a["perte_jour"] == 100
-    assert a["reste_arret_interne"] == 50 and a["reste_ftmo_jour"] == 400
+    assert a["reste_arret_interne"] == cfg["risk"]["daily_stop_usd"] - 100 and a["reste_ftmo_jour"] == 400
     assert a["marge_plancher_ftmo"] == 900 and not a["stop_interne_atteint"]
-    assert sn.account_status(cfg, 9900, 9850, -100)["stop_interne_atteint"]
+    assert sn.account_status(cfg, 9850, 9800, -150)["stop_interne_atteint"]          # 200 $ perdus
 
 
 def test_previous_weekdays_skip_weekend():
@@ -100,3 +100,18 @@ def test_fetch_session_cost_guard(mkt):
 
     with pytest.raises(SystemExit, match="coût estimé"):
         fetch_session(cfg, Client(), pd.Timestamp("2026-10-23"))
+
+
+def test_account_limits_day_trades_and_week():
+    from xauof.assistant.snapshot import account_status
+    from xauof.config import load_config
+
+    cfg = load_config()
+    ok = account_status(cfg, 10050.0, 10050.0, 50.0, trades_today=1, realized_week=-100.0)
+    assert not ok["stop_interne_atteint"] and ok["perte_semaine"] == 100.0 and ok["reste_semaine"] == 200.0
+    day = account_status(cfg, 9810.0, 9800.0, -190.0)                    # 200 $ perdus aujourd'hui (flottant compris)
+    assert day["stop_interne_atteint"] and "perte du jour" in day["stop_raisons"][0]
+    two = account_status(cfg, 10000.0, 10000.0, 0.0, trades_today=2)
+    assert two["stop_raisons"] == ["2 trades aujourd'hui (max 2)"]
+    week = account_status(cfg, 9700.0, 9700.0, 0.0, realized_week=-300.0)
+    assert week["stop_interne_atteint"] and "semaine" in week["stop_raisons"][0]

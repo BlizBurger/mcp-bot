@@ -42,4 +42,9 @@ def account(mt5, cfg: dict, now: pd.Timestamp) -> dict:
     deals = mt5.history_deals_get(mt5_time(midnight, clock), mt5_time(now + pd.Timedelta(minutes=1), clock)) or []
     trades = [d for d in deals if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL)]   # hors dépôts / retraits
     realized = sum(d.profit + d.commission + d.swap + getattr(d, "fee", 0.0) for d in trades)
-    return {"balance": float(info.balance), "equity": float(info.equity), "realized_today": float(realized)}
+    monday = midnight - pd.Timedelta(days=now.tz_convert(tz).weekday())
+    week = mt5.history_deals_get(mt5_time(monday, clock), mt5_time(now + pd.Timedelta(minutes=1), clock)) or []
+    week = [d for d in week if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL)]
+    return {"balance": float(info.balance), "equity": float(info.equity), "realized_today": float(realized),
+            "trades_today": sum(1 for d in trades if d.entry == mt5.DEAL_ENTRY_IN),
+            "realized_week": float(sum(d.profit + d.commission + d.swap + getattr(d, "fee", 0.0) for d in week))}

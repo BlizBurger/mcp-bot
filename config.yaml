@@ -68,8 +68,9 @@ account:
 risk:
   risk_per_trade_pct: 0.5         # % de min(equity, capital initial), frais estimés compris
   max_positions: 1
-  max_entries_per_day: 3          # entrées exécutées par journée de trading
-  daily_stop_usd: 150             # arrêt interne : réalisé + flottant + frais, vs solde à minuit Prague
+  max_entries_per_day: 2          # entrées exécutées par journée de trading (règle d'Alex, 2026-10-24)
+  daily_stop_usd: 200             # arrêt interne 2 % : réalisé + flottant + frais, vs solde à minuit Prague
+  weekly_stop_usd: 300            # arrêt semaine 3 % : depuis lundi minuit Prague → plus de trades jusqu'au lundi suivant
   daily_reset_timezone: Europe/Prague
   total_floor_margin_usd: 200     # marge interne au-dessus du plancher FTMO (9 000 → arrêt à 9 200)
   spread_filter_mult: 2.0         # bloque si spread > 2 × médiane des 60 dernières minutes
