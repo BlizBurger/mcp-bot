@@ -22,6 +22,7 @@ def market(tmp_path_factory):
     cfg = copy.deepcopy(load_config())
     cfg["data"]["dir"] = str(tmp_path_factory.mktemp("mkt") / "data")
     cfg["news"]["missing_calendar"] = "ignore_backtest_only"
+    cfg["risk"]["risk_per_trade_pct"] = 0.5     # specs V2/V3 figées : mesurées à 0,5 % par trade
     cfg["strategy"]["min_rr_net"] = 0.3          # TEST : assoupli pour obtenir des trades à vérifier
     make_market(cfg, DAYS, seed=2, kappa=0.03)
     return cfg, R.prepare(cfg, START, END)

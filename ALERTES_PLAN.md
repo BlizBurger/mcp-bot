@@ -19,7 +19,7 @@ neuve.
 | Entrée | ordre limite au bord haut de la zone (prix ask) | ordre limite au bord bas de la zone (prix bid) |
 | SL | bord bas − 0,25 × ATR M5 | bord haut + spread + 0,25 × ATR M5 |
 | TP | premier niveau d'hier au-dessus, à ≥ 1,5 R, moins 0,1 × ATR | premier niveau d'hier en dessous, à ≥ 1,5 R, plus spread + 0,1 × ATR |
-| Lots | risque 0,5 % de min(equity, capital initial) (50 $ sur 10k), coûts estimés compris | idem |
+| Lots | risque 1 % de min(equity, capital initial) (100 $ sur 10k ; 0,5 % jusqu'au 2026-10-25), coûts estimés compris | idem |
 
 Pas de niveau à ≥ 1,5 R → **pas de plan** (« RR insuffisant »).
 

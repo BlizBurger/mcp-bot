@@ -23,6 +23,7 @@ def cfg(tmp_path):
     c["costs"]["commission_per_lot_round_trip"] = 6.0      # chiffres des tests calculés avec 6 $/lot
     c["risk"]["daily_stop_usd"] = 150                      # … et avec l'ancien arrêt journalier de 150 $
     c["risk"]["max_entries_per_day"] = 3
+    c["risk"]["risk_per_trade_pct"] = 0.5
     return c
 
 

@@ -6,7 +6,7 @@
     "Niveaux d'hier à jour (assistant.update lancé ce matin)",
     "Alerte A+ reçue, ou plan écrit avant d'entrer (entrée, SL, TP)",
     "SL et TP saisis dans la fenêtre d'ordre, avant de valider",
-    "Taille calculée : risque ≤ 0,5 % (50 $)",
+    "Taille calculée : risque ≤ 1 % (100 $)",
     "Pas d'annonce importante dans les 15 minutes",
     "Pas un trade de revanche ni « pour tester »",
   ];
@@ -65,7 +65,7 @@
     const nd = Object.keys(days).length;
     const rows = [
       ["SL saisi dès l'entrée", trades.filter((t) => t.sl_initial).length, n],
-      ["Risque ≤ 0,5 % (≤ 55 $)", trades.filter((t) => t.risque_usd !== null && t.risque_usd !== undefined && t.risque_usd <= 55).length, n],
+      ["Risque ≤ 1 % (≤ 110 $)", trades.filter((t) => t.risque_usd !== null && t.risque_usd !== undefined && t.risque_usd <= 110).length, n],
       ["Jours à 2 trades maximum", Object.values(days).filter((k) => k <= 2).length, nd],
       ["Trades notés dans le journal (setup rempli)", trades.filter((t) => (t.setup || "").trim()).length, n],
     ];

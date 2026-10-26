@@ -14,7 +14,7 @@ def test_config_loads():
     # les garde-fous internes doivent rester sous les limites FTMO 2-Step
     assert cfg["risk"]["daily_stop_usd"] < cfg["ftmo"]["daily_loss_limit_usd"]
     assert cfg["risk"]["total_floor_margin_usd"] > 0
-    assert cfg["risk"]["risk_per_trade_pct"] * cfg["account"]["initial_capital"] / 100 == 50
+    assert cfg["risk"]["risk_per_trade_pct"] * cfg["account"]["initial_capital"] / 100 == 100
 
 
 @pytest.mark.parametrize("name", SUBPACKAGES)

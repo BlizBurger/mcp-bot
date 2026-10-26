@@ -66,7 +66,7 @@ account:
   currency: USD
 
 risk:
-  risk_per_trade_pct: 0.5         # % de min(equity, capital initial), frais estimés compris
+  risk_per_trade_pct: 1.0         # % de min(equity, capital initial), frais estimés compris (règle d'Alex, 2026-10-26)
   max_positions: 1
   max_entries_per_day: 2          # entrées exécutées par journée de trading (règle d'Alex, 2026-10-24)
   daily_stop_usd: 200             # arrêt interne 2 % : réalisé + flottant + frais, vs solde à minuit Prague

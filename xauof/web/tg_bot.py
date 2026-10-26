@@ -158,7 +158,7 @@ class TelegramBot:
             self.api("answerCallbackQuery", callback_query_id=q["id"], text="Noté ✅")
             self.api("editMessageReplyMarkup", chat_id=self.chat, message_id=q["message"]["message_id"],
                      reply_markup={"inline_keyboard": []})
-            msg = ("Noté : tu le prends. Checklist cochée ? SL et TP dans la fenêtre d'ordre, taille ≤ 0,5 %."
+            msg = ("Noté : tu le prends. Checklist cochée ? SL et TP dans la fenêtre d'ordre, taille ≤ 1 %."
                    if decision == "pris" else "Noté : tu passes.")
             mid = self.send(msg + "\nRéponds à ce message pour ajouter une note (facultatif).",
                             reply_to=q["message"]["message_id"])
