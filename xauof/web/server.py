@@ -124,7 +124,8 @@ class Hub:
     def day_bars(self, now):
         cfg = self.cfg
         day = now.tz_convert(NY).normalize().tz_localize(None)
-        start = ny_time(day, cfg["strategy"]["warmup_start"], NY)
+        # avant 04:00 NY (tôt le matin à Paris) : on montre quand même les 3 dernières heures
+        start = min(ny_time(day, cfg["strategy"]["warmup_start"], NY), now.floor("min") - pd.Timedelta(hours=3))
         return day, start, self.src.bars_m1(start, now + pd.Timedelta(minutes=1))
 
     def state(self) -> dict:
